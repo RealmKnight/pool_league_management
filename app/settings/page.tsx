@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
@@ -19,6 +19,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Upload, X, User } from "lucide-react";
 
 type UserProfile = Database["public"]["Tables"]["users"]["Row"];
 type Format = "Singles" | "Doubles" | "Scotch Doubles" | "Mixed";
@@ -53,6 +55,45 @@ type TimeSelection = {
   end: string;
 };
 
+type AvatarUploadState = {
+  uploading: boolean;
+  error: string | null;
+  preview: string | null;
+};
+
+// Add getInitials function
+const getInitials = (name: string) => {
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase();
+};
+
+// Add this type for avatar options
+type AvatarOption = {
+  id: string;
+  url: string;
+  name: string;
+};
+
+// Initialize Supabase client for getAvatarUrl function
+const supabaseClient = createClientComponentClient<Database>();
+
+// Update the getAvatarUrl function to use the full Supabase URL
+const getAvatarUrl = (filename: string) => {
+  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/avatars/defaults/${filename}`;
+};
+
+// Update the DEFAULT_AVATARS array to use a test image first
+const DEFAULT_AVATARS: AvatarOption[] = [
+  {
+    id: "8",
+    url: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/avatars/defaults/billiard-8ball_640.png`,
+    name: "8 Ball",
+  },
+];
+
 export default function SettingsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -78,6 +119,7 @@ export default function SettingsPage() {
       email: false,
     },
     use_nickname: false,
+    avatar_url: null as string | null,
   });
 
   const [isDirty, setIsDirty] = useState(false);
@@ -97,6 +139,13 @@ export default function SettingsPage() {
       email: false,
     },
     use_nickname: false,
+    avatar_url: null as string | null,
+  });
+
+  const [avatarState, setAvatarState] = useState<AvatarUploadState>({
+    uploading: false,
+    error: null,
+    preview: null,
   });
 
   const supabase = createClientComponentClient<Database>();
@@ -136,6 +185,7 @@ export default function SettingsPage() {
               email: false,
             },
             use_nickname: data.use_nickname || false,
+            avatar_url: data.avatar_url || null,
           };
           setFormData(initialData);
           setOriginalFormData(initialData);
@@ -174,6 +224,7 @@ export default function SettingsPage() {
           will_substitute: formData.will_substitute,
           contact_preferences: formData.contact_preferences,
           use_nickname: formData.use_nickname,
+          avatar_url: formData.avatar_url,
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
@@ -256,6 +307,105 @@ export default function SettingsPage() {
     });
   };
 
+  const handleAvatarUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      try {
+        const file = e.target.files?.[0];
+        if (!file || !user?.id) return;
+
+        // Validate file type and size
+        if (!file.type.startsWith("image/")) {
+          setAvatarState((prev) => ({ ...prev, error: "Please upload an image file" }));
+          return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+          setAvatarState((prev) => ({ ...prev, error: "Image must be less than 2MB" }));
+          return;
+        }
+
+        setAvatarState((prev) => ({ ...prev, uploading: true, error: null }));
+
+        // Create a preview
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setAvatarState((prev) => ({ ...prev, preview: e.target?.result as string }));
+        };
+        reader.readAsDataURL(file);
+
+        // Upload to Supabase Storage
+        const fileExt = file.name.split(".").pop();
+        const filePath = `avatar/${user.id}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        // Get the public URL
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("avatars").getPublicUrl(filePath);
+
+        // Update user profile with new avatar URL
+        const { error: updateError } = await supabase.from("users").update({ avatar_url: publicUrl }).eq("id", user.id);
+
+        if (updateError) throw updateError;
+
+        // Update form data
+        setFormData((prev) => ({ ...prev, avatar_url: publicUrl }));
+        toast({
+          title: "Success",
+          description: "Avatar updated successfully",
+        });
+      } catch (error) {
+        console.error("Error uploading avatar:", error);
+        setAvatarState((prev) => ({
+          ...prev,
+          error: "Failed to upload avatar",
+        }));
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to upload avatar",
+        });
+      } finally {
+        setAvatarState((prev) => ({ ...prev, uploading: false }));
+      }
+    },
+    [user, supabase, toast]
+  );
+
+  const handleRemoveAvatar = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      // Delete from storage
+      const { error: deleteError } = await supabase.storage.from("avatars").remove([`avatar/${user.id}`]);
+
+      if (deleteError) throw deleteError;
+
+      // Update user profile
+      const { error: updateError } = await supabase.from("users").update({ avatar_url: null }).eq("id", user.id);
+
+      if (updateError) throw updateError;
+
+      // Update form data
+      setFormData((prev) => ({ ...prev, avatar_url: null }));
+      setAvatarState({ uploading: false, error: null, preview: null });
+
+      toast({
+        title: "Success",
+        description: "Avatar removed successfully",
+      });
+    } catch (error) {
+      console.error("Error removing avatar:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to remove avatar",
+      });
+    }
+  }, [user, supabase, toast]);
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -275,6 +425,108 @@ export default function SettingsPage() {
             <CardDescription>Manage your personal details and contact information.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            <div className="flex flex-col items-center space-y-4 mb-6">
+              <div className="relative">
+                <Avatar className="h-24 w-24">
+                  <AvatarImage
+                    src={formData.avatar_url || undefined}
+                    alt={formData.first_name || user?.email || "Avatar"}
+                  />
+                  <AvatarFallback>{getInitials(formData.first_name || user?.email || "U")}</AvatarFallback>
+                </Avatar>
+                {formData.avatar_url && (
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                    onClick={handleRemoveAvatar}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="flex items-center space-x-2">
+                    <User className="h-4 w-4" />
+                    <span>Choose Avatar</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Choose an Avatar</DialogTitle>
+                    <DialogDescription>Select from our collection of default avatars</DialogDescription>
+                  </DialogHeader>
+                  <form autoComplete="off" className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4 p-4">
+                    {DEFAULT_AVATARS.map((avatar) => (
+                      <Button
+                        key={avatar.id}
+                        type="button"
+                        id={`avatar-${avatar.id}`}
+                        name={`avatar-${avatar.id}`}
+                        aria-label={`Select ${avatar.name} avatar`}
+                        variant="outline"
+                        className={`p-1 aspect-square ${
+                          formData.avatar_url === avatar.url ? "ring-2 ring-primary" : ""
+                        }`}
+                        onClick={async () => {
+                          try {
+                            if (!user?.id) {
+                              throw new Error("User ID not found");
+                            }
+
+                            // Update user profile with new avatar URL
+                            const { error: updateError } = await supabase
+                              .from("users")
+                              .update({ avatar_url: avatar.url })
+                              .eq("id", user.id);
+
+                            if (updateError) throw updateError;
+
+                            // Update form data
+                            setFormData((prev) => ({ ...prev, avatar_url: avatar.url }));
+                            toast({
+                              title: "Success",
+                              description: "Avatar updated successfully",
+                            });
+                          } catch (error) {
+                            console.error("Error updating avatar:", error);
+                            toast({
+                              variant: "destructive",
+                              title: "Error",
+                              description: "Failed to update avatar",
+                            });
+                          }
+                        }}
+                      >
+                        <Avatar className="w-full h-full">
+                          <AvatarImage
+                            src={avatar.url}
+                            alt={avatar.name}
+                            crossOrigin="anonymous"
+                            onError={(e) => {
+                              console.log(`Failed to load image: ${avatar.url}`);
+                              // Try to fetch the image directly to see the error
+                              fetch(avatar.url)
+                                .then((response) => {
+                                  if (!response.ok) {
+                                    throw new Error(`HTTP error! status: ${response.status}`);
+                                  }
+                                  return response.blob();
+                                })
+                                .then(() => console.log("Image exists but might have CORS issues"))
+                                .catch((error) => console.log("Image fetch error:", error));
+                              e.currentTarget.src = ""; // Clear the source to show fallback
+                            }}
+                          />
+                          <AvatarFallback>{avatar.name[0]}</AvatarFallback>
+                        </Avatar>
+                      </Button>
+                    ))}
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="firstName">First name</Label>
