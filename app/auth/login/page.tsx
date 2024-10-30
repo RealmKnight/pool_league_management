@@ -18,10 +18,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      console.log("User already logged in, redirecting to dashboard");
       window.location.href = "/dashboard";
     }
   }, [user]);
@@ -32,29 +30,22 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      console.log("Attempting login...");
       const { data, error } = await authService.signIn(email, password);
 
       if (error) {
-        console.error("Login error:", error);
         setError(error.message);
       } else if (data?.session) {
-        console.log("Login successful, redirecting to dashboard");
-        // Use window.location for a full page reload
         window.location.href = "/dashboard";
       } else {
-        console.error("No session after login");
         setError("Login failed. Please try again.");
       }
     } catch (err) {
-      console.error("Login exception:", err);
       setError("An unexpected error occurred. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  // If already logged in, show loading state
   if (user) {
     return <div>Redirecting to dashboard...</div>;
   }

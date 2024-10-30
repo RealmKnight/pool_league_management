@@ -65,6 +65,7 @@ export default function SettingsPage() {
   const [formData, setFormData] = useState({
     first_name: "",
     last_name: "",
+    nickname: "",
     phone_number: "",
     rules_preference: [] as string[],
     format_preference: [] as Format[],
@@ -76,12 +77,14 @@ export default function SettingsPage() {
       push: false,
       email: false,
     },
+    use_nickname: false,
   });
 
   const [isDirty, setIsDirty] = useState(false);
   const [originalFormData, setOriginalFormData] = useState({
     first_name: "",
     last_name: "",
+    nickname: "",
     phone_number: "",
     rules_preference: [] as string[],
     format_preference: [] as Format[],
@@ -93,6 +96,7 @@ export default function SettingsPage() {
       push: false,
       email: false,
     },
+    use_nickname: false,
   });
 
   const supabase = createClientComponentClient<Database>();
@@ -113,6 +117,7 @@ export default function SettingsPage() {
           const initialData = {
             first_name: data.first_name || "",
             last_name: data.last_name || "",
+            nickname: data.nickname || "",
             phone_number: data.phone_number || "",
             rules_preference: data.rules_preference
               ? Array.isArray(data.rules_preference)
@@ -130,6 +135,7 @@ export default function SettingsPage() {
               push: false,
               email: false,
             },
+            use_nickname: data.use_nickname || false,
           };
           setFormData(initialData);
           setOriginalFormData(initialData);
@@ -160,12 +166,14 @@ export default function SettingsPage() {
         .update({
           first_name: formData.first_name,
           last_name: formData.last_name,
+          nickname: formData.nickname,
           phone_number: formData.phone_number,
           rules_preference: formData.rules_preference,
           format_preference: formData.format_preference,
           availability: formData.availability,
           will_substitute: formData.will_substitute,
           contact_preferences: formData.contact_preferences,
+          use_nickname: formData.use_nickname,
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
@@ -302,6 +310,28 @@ export default function SettingsPage() {
                   placeholder="Enter your phone number"
                   value={formData.phone_number}
                   onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="nickname">Nickname</Label>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="use_nickname"
+                      checked={formData.use_nickname}
+                      onCheckedChange={(checked) => setFormData({ ...formData, use_nickname: checked as boolean })}
+                    />
+                    <Label htmlFor="use_nickname" className="text-sm text-muted-foreground">
+                      Use nickname in app
+                    </Label>
+                  </div>
+                </div>
+                <Input
+                  id="nickname"
+                  placeholder="Enter your nickname"
+                  value={formData.nickname}
+                  onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
                 />
               </div>
             </div>

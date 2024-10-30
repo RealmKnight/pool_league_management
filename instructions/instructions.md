@@ -100,7 +100,6 @@ Pool leagues currently face challenges in efficiently managing matches, teams, a
 2. Team Captain
 
    - Team roster management
-   - Match scheduling
    - Score submission
    - Team settings management
 

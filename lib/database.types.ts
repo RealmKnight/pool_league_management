@@ -75,6 +75,8 @@ export type Database = {
             push: boolean;
             email: boolean;
           } | null;
+          nickname: string | null;
+          use_nickname: boolean | null;
         };
         Insert: {
           avatar_url?: string | null;
@@ -97,6 +99,8 @@ export type Database = {
             push: boolean;
             email: boolean;
           } | null;
+          nickname?: string | null;
+          use_nickname?: boolean | null;
         };
         Update: {
           avatar_url?: string | null;
@@ -119,6 +123,8 @@ export type Database = {
             push: boolean;
             email: boolean;
           } | null;
+          nickname?: string | null;
+          use_nickname?: boolean | null;
         };
         Relationships: [
           {

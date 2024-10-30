@@ -21,7 +21,7 @@ export default function DashboardPage() {
         const { data, error } = await supabase.from("users").select("*").eq("id", user.id).single();
 
         if (error) {
-          console.error("Error loading profile:", error);
+          setProfile(null);
         } else {
           setProfile(data);
         }
@@ -31,6 +31,19 @@ export default function DashboardPage() {
 
     loadProfile();
   }, [user, supabase]);
+
+  const getDisplayName = () => {
+    if (profile?.use_nickname && profile?.nickname) {
+      return profile.nickname;
+    }
+    if (profile?.first_name) {
+      return profile.first_name;
+    }
+    if (profile?.full_name) {
+      return profile.full_name;
+    }
+    return user?.email?.split("@")[0] || "Guest";
+  };
 
   if (loading) {
     return <div>Loading...</div>;
@@ -43,7 +56,7 @@ export default function DashboardPage() {
       {/* Welcome Card */}
       <Card className="mb-8">
         <CardHeader>
-          <CardTitle>Welcome, {profile?.full_name || user?.email}</CardTitle>
+          <CardTitle>Welcome, {getDisplayName()}</CardTitle>
           <CardDescription>Your role: {profile?.role || "Player"}</CardDescription>
         </CardHeader>
       </Card>

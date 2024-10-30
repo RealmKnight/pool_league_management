@@ -7,7 +7,6 @@ type UserRole = "superuser" | "league_admin" | "league_secretary" | "team_captai
 export const authService = {
   async signUp(email: string, password: string) {
     try {
-      console.log("Attempting signup...");
       const supabase = createClientComponentClient<Database>();
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -19,7 +18,6 @@ export const authService = {
       });
 
       if (authError) {
-        console.error("Auth signup error:", authError);
         return { data: null, error: authError };
       }
 
@@ -46,7 +44,6 @@ export const authService = {
         );
 
         if (profileError) {
-          console.error("Profile creation error:", profileError);
           return {
             data: authData,
             error: new Error("Account created but profile setup failed"),
@@ -55,14 +52,12 @@ export const authService = {
 
         return { data: authData, error: null };
       } catch (profileErr) {
-        console.error("Profile creation exception:", profileErr);
         return {
           data: authData,
           error: new Error("Account created but profile setup failed"),
         };
       }
     } catch (err) {
-      console.error("Signup exception:", err);
       return {
         data: null,
         error: new Error("Unable to connect to authentication service"),
@@ -78,13 +73,8 @@ export const authService = {
         password,
       });
 
-      if (error) {
-        console.error("Signin error:", error);
-      }
-
       return { data, error };
     } catch (err) {
-      console.error("Signin exception:", err);
       return {
         data: null,
         error: new Error("Failed to connect to authentication service"),
