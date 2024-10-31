@@ -86,6 +86,13 @@ export interface Database {
           schedule: Json;
           estimated_weeks: number;
           team_count: number;
+          league_admins?: {
+            user_id: string;
+            users: {
+              first_name: string;
+              last_name: string;
+            };
+          }[];
         };
         Insert: {
           id?: string;

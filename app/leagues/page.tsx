@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-type League = Database["public"]["Tables"]["leagues"]["Row"];
+// Base type from database
+type BaseLeague = Database["public"]["Tables"]["leagues"]["Row"];
+type LeagueAdmin = Database["public"]["Tables"]["league_admins"]["Row"] & {
+  users: Pick<Database["public"]["Tables"]["users"]["Row"], "first_name" | "last_name">;
+};
+
+// Extended type for leagues with joined admin data
+type League = BaseLeague & {
+  league_admins: {
+    id: string;
+    league_id: string;
+    user_id: string;
+    created_at: string;
+    users: {
+      first_name: string | null;
+      last_name: string | null;
+    };
+  };
+};
 
 type LeagueScheduleType = "single_day" | "multiple_days";
 type LeagueFormat = "round_robin" | "bracket" | "swiss";
@@ -36,6 +55,31 @@ interface LeagueSchedule {
 
 type LeagueRules = "BCA" | "APA" | "Bar" | "House";
 
+// Move LeagueAdminDisplay component outside of loadInitialData
+const LeagueAdminDisplay = ({ league }: { league: League }) => {
+  console.log("League in display:", league);
+  console.log("League admins:", league.league_admins);
+  console.log("First admin:", league.league_admins?.users);
+  console.log("First admin's user data:", league.league_admins?.users);
+
+  return (
+    <div className="flex justify-between text-sm">
+      <span>Administrator: </span>
+      <span>
+        {league.league_admins?.users
+          ? (() => {
+              const adminName = `${league.league_admins.users.first_name || ""} ${
+                league.league_admins.users.last_name || ""
+              }`.trim();
+              console.log("Admin name being rendered:", adminName);
+              return adminName || "Not Found";
+            })()
+          : "Not Found"}
+      </span>
+    </div>
+  );
+};
+
 export default function LeaguesPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -44,6 +88,16 @@ export default function LeaguesPage() {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedAdminId, setSelectedAdminId] = useState<string | null>(null);
+  const [changeAdminDialogOpen, setChangeAdminDialogOpen] = useState(false);
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
+  const [availableAdmins, setAvailableAdmins] = useState<
+    Array<{
+      id: string;
+      first_name: string;
+      last_name: string;
+    }>
+  >([]);
 
   const [newLeague, setNewLeague] = useState({
     name: "",
@@ -70,62 +124,103 @@ export default function LeaguesPage() {
   // Add state for selected league secretary ID
   const [selectedSecretaryId, setSelectedSecretaryId] = useState<string | null>(null);
 
-  // Check user role and fetch leagues
+  const loadInitialData = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      setLoading(true);
+
+      const [userResponse, leaguesResponse] = await Promise.all([
+        supabase.from("users").select("role").eq("id", user.id).single(),
+        supabase.from("leagues").select(`
+          *,
+          league_admins!league_admins_league_id_fkey (
+            id,
+            user_id,
+            league_id,
+            created_at,
+            users!league_admins_user_id_fkey (
+              first_name,
+              last_name
+            )
+          )
+        `),
+      ]);
+
+      console.log("User Response:", userResponse);
+      console.log("Leagues Response:", leaguesResponse);
+
+      if (userResponse.error) throw userResponse.error;
+      if (leaguesResponse.error) throw leaguesResponse.error;
+
+      setUserRole(userResponse.data.role);
+
+      const filteredData =
+        userResponse.data.role === "superuser"
+          ? leaguesResponse.data
+          : leaguesResponse.data.filter((league) => league.created_by === user.id);
+
+      console.log("Filtered Leagues Data:", filteredData);
+
+      setLeagues(filteredData);
+      setFilteredLeagues(filteredData);
+    } catch (error) {
+      console.error("Error loading data:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load data",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id, supabase, toast]);
+
+  // Use a single useEffect for initial data loading
   useEffect(() => {
-    async function loadUserRoleAndLeagues() {
-      if (!user?.id) return;
+    loadInitialData();
+  }, [loadInitialData]);
 
-      try {
-        // Fetch user role
-        const { data: userData, error: userError } = await supabase
-          .from("users")
-          .select("role")
-          .eq("id", user.id)
-          .single();
+  const canCreateLeague = userRole === "superuser" || userRole === "league_admin";
 
-        if (userError) throw userError;
-        setUserRole(userData.role);
-
-        // Fetch leagues based on role
-        let query = supabase.from("leagues").select("*");
-
-        if (userData.role === "superuser") {
-          // Superusers can see all leagues
-          const { data: leaguesData, error: leaguesError } = await query.select(`
-              *,
-              league_secretaries (
-                user_id,
-                users (first_name, last_name)
-              )
-            `);
-
-          if (leaguesError) throw leaguesError;
-          setLeagues(leaguesData || []);
-          setFilteredLeagues(leaguesData || []);
-        } else {
-          // League admins can only see leagues they created
-          const { data: leaguesData, error: leaguesError } = await query.or(`created_by.eq.${user.id}`);
-
-          if (leaguesError) throw leaguesError;
-          setLeagues(leaguesData || []);
-          setFilteredLeagues(leaguesData || []);
-        }
-      } catch (error) {
-        console.error("Error loading data:", error);
+  // Add function to fetch available admins
+  const fetchAvailableAdmins = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select(
+          `
+          id,
+          first_name,
+          last_name,
+          email,
+          role
+        `
+        )
+        .order("first_name");
+      console.log(data + "fetchAdmins Data");
+      if (error) {
+        console.error("Error fetching users:", error);
         toast({
           variant: "destructive",
           title: "Error",
-          description: "Failed to load leagues",
+          description: "Failed to fetch users",
         });
-      } finally {
-        setLoading(false);
+        return;
       }
+
+      setAvailableAdmins(data || []);
+    } catch (error) {
+      console.error("Error:", error);
     }
+  };
 
-    loadUserRoleAndLeagues();
-  }, [user, supabase, toast]);
-
-  const canCreateLeague = userRole === "superuser" || userRole === "league_admin";
+  // Load available admins when dialog opens
+  useEffect(() => {
+    if (userRole === "superuser" && changeAdminDialogOpen) {
+      fetchAvailableAdmins();
+    }
+  }, [userRole, changeAdminDialogOpen]);
 
   const handleCreateLeague = async () => {
     try {
@@ -155,7 +250,8 @@ export default function LeaguesPage() {
         throw new Error("Multiple day leagues can have up to three days selected");
       }
 
-      const { data, error } = await supabase
+      // Create the league
+      const { data: leagueData, error: leagueError } = await supabase
         .from("leagues")
         .insert({
           name: newLeague.name,
@@ -173,13 +269,65 @@ export default function LeaguesPage() {
         .select()
         .single();
 
-      if (error) {
-        console.error("Supabase error:", error);
-        throw new Error(error.message);
+      if (leagueError) throw leagueError;
+
+      // If superuser is creating the league and selected an admin
+      if (userRole === "superuser" && selectedAdminId) {
+        const { error: adminError } = await supabase.from("league_admins").insert({
+          league_id: leagueData.id,
+          user_id: selectedAdminId,
+        });
+
+        if (adminError) throw adminError;
+
+        // Fetch the updated league data with the admin information
+        const { data: updatedLeague, error: fetchError } = await supabase
+          .from("leagues")
+          .select(
+            `
+            *,
+            league_admins!league_admins_league_id_fkey (
+              user_id,
+              users!league_admins_user_id_fkey (
+                first_name,
+                last_name
+              )
+            )
+          `
+          )
+          .eq("id", leagueData.id)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        // Update the leagues state with the complete data
+        setLeagues([...leagues, updatedLeague]);
+        setFilteredLeagues([...filteredLeagues, updatedLeague]);
+      } else {
+        // For non-superusers, fetch the updated league data after the trigger creates the admin
+        const { data: updatedLeague, error: fetchError } = await supabase
+          .from("leagues")
+          .select(
+            `
+            *,
+            league_admins!league_admins_league_id_fkey (
+              user_id,
+              users!league_admins_user_id_fkey (
+                first_name,
+                last_name
+              )
+            )
+          `
+          )
+          .eq("id", leagueData.id)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        setLeagues([...leagues, updatedLeague]);
+        setFilteredLeagues([...filteredLeagues, updatedLeague]);
       }
 
-      setLeagues([...leagues, data]);
-      setFilteredLeagues([...leagues, data]);
       toast({
         title: "Success",
         description: "League created successfully",
@@ -205,6 +353,9 @@ export default function LeaguesPage() {
         estimated_weeks: 0,
         team_count: 8,
       });
+
+      // Reset the admin selection
+      setSelectedAdminId(null);
     } catch (error) {
       console.error("Error creating league:", error);
       toast({
@@ -265,45 +416,60 @@ export default function LeaguesPage() {
     return endDate;
   };
 
-  const handleSearch = (term: string) => {
-    setSearchTerm(term);
-    if (term.trim() === "") {
-      setFilteredLeagues(leagues);
-    } else {
-      setFilteredLeagues(leagues.filter((league) => league.name.toLowerCase().includes(term.toLowerCase())));
-    }
-  };
+  const handleSearchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const searchTerm = e.target.value.toLowerCase();
+      setSearchTerm(searchTerm);
 
-  // Add this function to fetch users for selection
-  const fetchUsers = async () => {
-    const { data, error } = await supabase.from("users").select("*");
-    if (error) {
-      console.error("Error fetching users:", error);
-      return [];
-    }
-    return data || [];
-  };
-
-  // Add a state to hold users
-  const [users, setUsers] = useState([]);
-
-  // Fetch users when the component mounts
-  useEffect(() => {
-    const loadUsers = async () => {
-      const fetchedUsers = await fetchUsers();
-      setUsers(fetchedUsers);
-    };
-    loadUsers();
-  }, []);
+      const filtered = leagues.filter(
+        (league) =>
+          league.name.toLowerCase().includes(searchTerm) || league.description?.toLowerCase().includes(searchTerm)
+      );
+      setFilteredLeagues(filtered);
+    },
+    [leagues]
+  );
 
   // Add state for the dialog
   const [assignSecretaryDialogOpen, setAssignSecretaryDialogOpen] = useState(false);
   const [currentLeagueId, setCurrentLeagueId] = useState<string | null>(null);
 
   // Function to open the dialog
-  const openAssignSecretaryDialog = (leagueId: string) => {
+  const openAssignSecretaryDialog = async (leagueId: string) => {
     setCurrentLeagueId(leagueId);
-    setAssignSecretaryDialogOpen(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select(
+          `
+          id,
+          first_name,
+          last_name
+        `
+        )
+        .order("first_name");
+
+      if (error) {
+        console.error("Error fetching users:", error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to fetch users",
+        });
+        return;
+      }
+
+      setAvailableAdmins(data || []);
+      setAssignSecretaryDialogOpen(true);
+    } catch (error) {
+      console.error("Error:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to fetch users",
+      });
+    }
   };
 
   // Dialog for assigning a league secretary
@@ -326,7 +492,7 @@ export default function LeaguesPage() {
         </SelectTrigger>
         // Start of Selection
         <SelectContent>
-          {users.map((user: { id: string; first_name: string; last_name: string }) => (
+          {availableAdmins.map((user) => (
             <SelectItem key={user.id} value={user.id}>
               {user.first_name} {user.last_name}
             </SelectItem>
@@ -364,6 +530,231 @@ export default function LeaguesPage() {
     </DialogContent>
   </Dialog>;
 
+  // Add this function to handle changing the league admin
+  const handleChangeAdmin = async (leagueId: string, newAdminId: string) => {
+    try {
+      // First check if the new admin is already an admin for this league
+      const { data: currentAdmins, error: fetchError } = await supabase
+        .from("league_admins")
+        .select(
+          `
+          id,
+          user_id,
+          league_id,
+          users!league_admins_user_id_fkey (
+            first_name,
+            last_name,
+            role
+          )
+        `
+        )
+        .eq("league_id", leagueId);
+
+      if (fetchError) {
+        console.error("Error fetching current admins:", fetchError);
+        throw fetchError;
+      }
+
+      // Check if the new admin is already an admin
+      if (currentAdmins?.some((admin) => admin.user_id === newAdminId)) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "This user is already an administrator for this league",
+        });
+        return;
+      }
+
+      // Update the existing admin record instead of deleting and inserting
+      if (currentAdmins && currentAdmins.length > 0) {
+        const oldAdmin = currentAdmins[0];
+
+        // Check if the old admin is a superuser - if so, don't change their role
+        const isSuperuser = oldAdmin.users?.role === "superuser";
+
+        // Update the existing record
+        const { error: updateError } = await supabase
+          .from("league_admins")
+          .update({ user_id: newAdminId })
+          .eq("league_id", leagueId)
+          .eq("id", oldAdmin.id);
+
+        if (updateError) {
+          console.error("Error updating admin:", updateError);
+          throw updateError;
+        }
+
+        // Only check for other leagues and update role if the old admin is not a superuser
+        if (!isSuperuser) {
+          // Check if the old admin is an admin for any other leagues
+          const { data: otherLeagues, error: checkError } = await supabase
+            .from("league_admins")
+            .select("*")
+            .eq("user_id", oldAdmin.user_id);
+
+          if (checkError) {
+            console.error("Error checking other leagues:", checkError);
+            throw checkError;
+          }
+
+          // If this was their only league, update their role back to player
+          if (!otherLeagues || otherLeagues.length === 0) {
+            const { error: roleUpdateError } = await supabase
+              .from("users")
+              .update({ role: "player" })
+              .eq("id", oldAdmin.user_id);
+
+            if (roleUpdateError) {
+              console.error("Error updating old admin role:", roleUpdateError);
+              throw roleUpdateError;
+            }
+          }
+        }
+
+        // Update the new admin's role if they're not already a superuser
+        const { data: newAdminData, error: newAdminCheckError } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", newAdminId)
+          .single();
+
+        if (newAdminCheckError) {
+          console.error("Error checking new admin role:", newAdminCheckError);
+          throw newAdminCheckError;
+        }
+
+        if (newAdminData.role !== "superuser") {
+          const { error: userUpdateError } = await supabase
+            .from("users")
+            .update({ role: "league_admin" })
+            .eq("id", newAdminId);
+
+          if (userUpdateError) {
+            console.error("Error updating user role:", userUpdateError);
+            throw userUpdateError;
+          }
+        }
+
+        // Refresh the leagues data
+        const { data: updatedLeague, error: refreshError } = await supabase
+          .from("leagues")
+          .select(
+            `
+            *,
+            league_admins!league_admins_league_id_fkey (
+              user_id,
+              users!league_admins_user_id_fkey (
+                first_name,
+                last_name
+              )
+            )
+          `
+          )
+          .eq("id", leagueId)
+          .single();
+
+        if (refreshError) {
+          console.error("Error refreshing league data:", refreshError);
+          throw refreshError;
+        }
+
+        // Update the leagues state
+        setLeagues(leagues.map((league) => (league.id === leagueId ? updatedLeague : league)));
+        setFilteredLeagues(filteredLeagues.map((league) => (league.id === leagueId ? updatedLeague : league)));
+
+        toast({
+          title: "Success",
+          description: "League administrator changed successfully",
+        });
+        setChangeAdminDialogOpen(false);
+        setSelectedAdminId(null);
+      }
+    } catch (error) {
+      console.error("Error changing league admin:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to change league administrator",
+      });
+    }
+  };
+
+  // Remove the useEffect for fetchAvailableAdmins and move it into the click handler
+  const openChangeAdminDialog = useCallback(
+    async (leagueId: string) => {
+      setSelectedLeagueId(leagueId);
+
+      if (userRole === "superuser") {
+        try {
+          const { data, error } = await supabase
+            .from("users")
+            .select(
+              `
+            id,
+            first_name,
+            last_name,
+            email,
+            role
+          `
+            )
+            .order("first_name");
+
+          if (error) throw error;
+          setAvailableAdmins(data || []);
+          setChangeAdminDialogOpen(true);
+        } catch (error) {
+          console.error("Error fetching users:", error);
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to fetch users",
+          });
+        }
+      }
+    },
+    [userRole, supabase, toast]
+  );
+
+  // Move the ChangeAdminDialog component outside of the main component
+  const ChangeAdminDialog = () => (
+    <Dialog open={changeAdminDialogOpen} onOpenChange={setChangeAdminDialogOpen}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Change League Administrator</DialogTitle>
+          <DialogDescription>Select a new administrator for this league.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="new-admin">New Administrator</Label>
+            <Select value={selectedAdminId || ""} onValueChange={setSelectedAdminId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select an administrator" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableAdmins.map((admin) => (
+                  <SelectItem key={admin.id} value={admin.id}>
+                    {admin.first_name} {admin.last_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={() => {
+              if (selectedLeagueId && selectedAdminId) {
+                handleChangeAdmin(selectedLeagueId, selectedAdminId);
+              }
+            }}
+          >
+            Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -372,8 +763,8 @@ export default function LeaguesPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-lg font-medium">League Management</h3>
-          <p className="text-sm text-muted-foreground">Create and manage your pool leagues.</p>
+          <h3 className="text-lg font-medium">Pool Leagues</h3>
+          {canCreateLeague && <p className="text-sm text-muted-foreground">Create and manage your pool leagues.</p>}
         </div>
         {canCreateLeague && (
           <Dialog>
@@ -388,13 +779,7 @@ export default function LeaguesPage() {
                 <DialogTitle className="text-center">Create New League</DialogTitle>
                 <DialogDescription className="text-center">Enter the details for your new league.</DialogDescription>
               </DialogHeader>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleCreateLeague();
-                }}
-                className="space-y-6"
-              >
+              <form onSubmit={handleCreateLeague} className="space-y-6">
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="league-name">League Name</Label>
@@ -669,6 +1054,27 @@ export default function LeaguesPage() {
                   </div>
                 )}
 
+                {userRole === "superuser" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="league-admin">League Administrator</Label>
+                    <Select value={selectedAdminId || undefined} onValueChange={(value) => setSelectedAdminId(value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an administrator" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableAdmins.map((admin) => (
+                          <SelectItem key={admin.id} value={admin.id}>
+                            {admin.first_name} {admin.last_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Select a league administrator. If none is selected, you will be set as the administrator.
+                    </p>
+                  </div>
+                )}
+
                 <div className="sticky bottom-0 bg-background pt-4">
                   <Button type="submit" className="w-full">
                     Create League
@@ -680,18 +1086,18 @@ export default function LeaguesPage() {
         )}
       </div>
 
-      {userRole === "superuser" && (
-        <div className="flex items-center space-x-2 mb-4">
-          <Search className="h-5 w-5 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Search leagues..."
-            value={searchTerm}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="w-full"
-          />
-        </div>
-      )}
+      <div className="flex items-center space-x-2 mb-4">
+        <Search className="h-5 w-5 text-muted-foreground" />
+        <Input
+          type="text"
+          placeholder="Search leagues..."
+          value={searchTerm}
+          onChange={(e) => handleSearchChange(e)}
+          className="w-full"
+          id="search-leagues"
+          name="search-leagues"
+        />
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {filteredLeagues.map((league) => (
@@ -713,6 +1119,19 @@ export default function LeaguesPage() {
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
+                  <span>Administrator: </span>
+                  <span>
+                    {league.league_admins?.users
+                      ? (() => {
+                          const adminName = `${league.league_admins.users.first_name || ""} ${
+                            league.league_admins.users.last_name || ""
+                          }`.trim();
+                          return adminName || "Not Found";
+                        })()
+                      : "Not Found"}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
                   <span>League Secretary: </span>
                   <span>
                     {league.secretary_id
@@ -721,9 +1140,11 @@ export default function LeaguesPage() {
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Button variant="outline" className="w-full" onClick={() => openAssignSecretaryDialog(league.id)}>
-                    Assign Secretary
-                  </Button>
+                  {userRole === "superuser" && (
+                    <Button variant="outline" className="w-full" onClick={() => openChangeAdminDialog(league.id)}>
+                      Change Admin
+                    </Button>
+                  )}
                   <Button variant="outline" className="w-full">
                     <Settings className="mr-2 h-4 w-4" />
                     Settings
@@ -746,6 +1167,7 @@ export default function LeaguesPage() {
           </Card>
         ))}
       </div>
+      <ChangeAdminDialog />
     </div>
   );
 }

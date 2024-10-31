@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,6 +19,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (user) {
@@ -35,7 +38,25 @@ export default function LoginPage() {
       if (error) {
         setError(error.message);
       } else if (data?.session) {
-        window.location.href = "/dashboard";
+        // Check if user has completed their profile
+        const { data: userData, error: userError } = await supabase
+          .from("users")
+          .select("first_name, last_name, phone_number")
+          .eq("id", data.session.user.id)
+          .single();
+
+        if (!userError && (!userData.first_name || !userData.last_name || !userData.phone_number)) {
+          // Profile is incomplete, show toast and redirect to settings
+          toast({
+            title: "Welcome Back!",
+            description: "Please complete your profile information to continue.",
+            duration: 5000,
+          });
+          window.location.href = "/settings";
+        } else {
+          // Profile is complete, redirect to dashboard
+          window.location.href = "/dashboard";
+        }
       } else {
         setError("Login failed. Please try again.");
       }

@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Home, LogIn, UserPlus, User, Settings, LogOut, Sun, Moon } from "lucide-react";
+import { Home, LogIn, UserPlus, User, Settings, LogOut, Sun, Moon, ListOrderedIcon, BookUserIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { authService } from "@/lib/auth-service";
 
@@ -54,6 +54,22 @@ export function Navbar() {
                 <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                   <Home className="mr-2 h-4 w-4" />
                   Home
+                </NavigationMenuLink>
+              </Link>
+            </NavigationMenuItem>
+            <NavigationMenuItem>
+              <Link href="/leagues" legacyBehavior passHref>
+                <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                  <ListOrderedIcon className="mr-2 h-4 w-4" />
+                  Leagues
+                </NavigationMenuLink>
+              </Link>
+            </NavigationMenuItem>
+            <NavigationMenuItem>
+              <Link href="/teams" legacyBehavior passHref>
+                <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                  <BookUserIcon className="mr-2 h-4 w-4" />
+                  Teams
                 </NavigationMenuLink>
               </Link>
             </NavigationMenuItem>

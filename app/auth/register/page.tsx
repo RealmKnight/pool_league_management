@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,8 +30,15 @@ export default function RegisterPage() {
         setError(error.message);
         console.error("Signup error details:", error);
       } else if (data?.session) {
-        // User is auto-confirmed and has a session, redirect to dashboard
-        router.push("/dashboard");
+        // Show toast message about completing profile
+        toast({
+          title: "Welcome!",
+          description: "Please complete your profile information to get started.",
+          duration: 5000, // Show for 5 seconds
+        });
+
+        // Redirect to settings page instead of dashboard
+        router.push("/settings");
       } else {
         // User needs to verify email
         router.push("/auth/verify-email");
