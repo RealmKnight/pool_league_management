@@ -19,7 +19,7 @@ export interface Database {
           will_substitute: boolean | null;
           contact_preferences: Json | null;
           use_nickname: boolean | null;
-          role: string | null;
+          role: "superuser" | "league_admin" | "league_secretary" | "team_captain" | "team_secretary" | "player" | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -38,7 +38,14 @@ export interface Database {
           will_substitute?: boolean | null;
           contact_preferences?: Json | null;
           use_nickname?: boolean | null;
-          role?: string | null;
+          role?:
+            | "superuser"
+            | "league_admin"
+            | "league_secretary"
+            | "team_captain"
+            | "team_secretary"
+            | "player"
+            | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -57,7 +64,14 @@ export interface Database {
           will_substitute?: boolean | null;
           contact_preferences?: Json | null;
           use_nickname?: boolean | null;
-          role?: string | null;
+          role?:
+            | "superuser"
+            | "league_admin"
+            | "league_secretary"
+            | "team_captain"
+            | "team_secretary"
+            | "player"
+            | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -76,18 +90,19 @@ export interface Database {
           id: string;
           name: string;
           description: string | null;
-          rules: Json;
+          rules: Json | null;
           season_start: string | null;
           season_end: string | null;
           created_by: string;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
           format: string;
           schedule: Json;
           estimated_weeks: number;
           team_count: number;
-          league_admins?: {
+          league_permissions?: {
             user_id: string;
+            permission_type: string;
             users: {
               first_name: string;
               last_name: string;
@@ -98,12 +113,12 @@ export interface Database {
           id?: string;
           name: string;
           description?: string | null;
-          rules?: Json;
+          rules?: Json | null;
           season_start?: string | null;
           season_end?: string | null;
           created_by: string;
-          created_at?: string;
-          updated_at?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
           format?: string;
           schedule?: Json;
           estimated_weeks?: number;
@@ -113,12 +128,12 @@ export interface Database {
           id?: string;
           name?: string;
           description?: string | null;
-          rules?: Json;
+          rules?: Json | null;
           season_start?: string | null;
           season_end?: string | null;
           created_by?: string;
-          created_at?: string;
-          updated_at?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
           format?: string;
           schedule?: Json;
           estimated_weeks?: number;
@@ -134,35 +149,38 @@ export interface Database {
           }
         ];
       };
-      league_admins: {
+      league_permissions: {
         Row: {
           id: string;
           league_id: string;
           user_id: string;
-          created_at: string;
+          permission_type: string;
+          created_at: string | null;
         };
         Insert: {
           id?: string;
           league_id: string;
           user_id: string;
-          created_at?: string;
+          permission_type: string;
+          created_at?: string | null;
         };
         Update: {
           id?: string;
           league_id?: string;
           user_id?: string;
-          created_at?: string;
+          permission_type?: string;
+          created_at?: string | null;
         };
         Relationships: [
           {
-            foreignKeyName: "league_admins_league_id_fkey";
+            foreignKeyName: "league_permissions_league_id_fkey";
             columns: ["league_id"];
             isOneToOne: false;
             referencedRelation: "leagues";
             referencedColumns: ["id"];
           },
           {
-            foreignKeyName: "league_admins_user_id_fkey";
+            foreignKeyName: "league_permissions_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "users";
@@ -170,33 +188,250 @@ export interface Database {
           }
         ];
       };
-      league_secretaries: {
+      teams: {
         Row: {
           id: string;
-          league_id: string;
-          user_id: string;
-          created_at: string;
+          league_id: string | null;
+          name: string;
+          format: string;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: {
-          league_id: string;
-          user_id: string;
-          created_at?: string;
+          id?: string;
+          league_id?: string | null;
+          name: string;
+          format: string;
+          created_at?: string | null;
+          updated_at?: string | null;
         };
         Update: {
-          league_id?: string;
-          user_id?: string;
-          created_at?: string;
+          id?: string;
+          league_id?: string | null;
+          name?: string;
+          format?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
         };
+        Relationships: [
+          {
+            foreignKeyName: "teams_league_id_fkey";
+            columns: ["league_id"];
+            isOneToOne: false;
+            referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      team_players: {
+        Row: {
+          id: string;
+          team_id: string | null;
+          league_id: string | null;
+          user_id: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          team_id?: string | null;
+          league_id?: string | null;
+          user_id?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          team_id?: string | null;
+          league_id?: string | null;
+          user_id?: string | null;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "team_players_league_id_fkey";
+            columns: ["league_id"];
+            isOneToOne: false;
+            referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_players_team_id_fkey";
+            columns: ["team_id"];
+            isOneToOne: false;
+            referencedRelation: "teams";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_players_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      matches: {
+        Row: {
+          id: string;
+          league_id: string | null;
+          home_team_id: string | null;
+          away_team_id: string | null;
+          match_date: string;
+          status: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          league_id?: string | null;
+          home_team_id?: string | null;
+          away_team_id?: string | null;
+          match_date: string;
+          status?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          league_id?: string | null;
+          home_team_id?: string | null;
+          away_team_id?: string | null;
+          match_date?: string;
+          status?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "matches_league_id_fkey";
+            columns: ["league_id"];
+            isOneToOne: false;
+            referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "matches_home_team_id_fkey";
+            columns: ["home_team_id"];
+            isOneToOne: false;
+            referencedRelation: "teams";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "matches_away_team_id_fkey";
+            columns: ["away_team_id"];
+            isOneToOne: false;
+            referencedRelation: "teams";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      games: {
+        Row: {
+          id: string;
+          match_id: string | null;
+          league_id: string | null;
+          home_player_id: string | null;
+          away_player_id: string | null;
+          home_score: number | null;
+          away_score: number | null;
+          game_number: number;
+          status: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          match_id?: string | null;
+          league_id?: string | null;
+          home_player_id?: string | null;
+          away_player_id?: string | null;
+          home_score?: number | null;
+          away_score?: number | null;
+          game_number: number;
+          status?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          match_id?: string | null;
+          league_id?: string | null;
+          home_player_id?: string | null;
+          away_player_id?: string | null;
+          home_score?: number | null;
+          away_score?: number | null;
+          game_number?: number;
+          status?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "games_league_id_fkey";
+            columns: ["league_id"];
+            isOneToOne: false;
+            referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "games_match_id_fkey";
+            columns: ["match_id"];
+            isOneToOne: false;
+            referencedRelation: "matches";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "games_home_player_id_fkey";
+            columns: ["home_player_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "games_away_player_id_fkey";
+            columns: ["away_player_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
       };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      is_superuser: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
+      has_league_permission: {
+        Args: {
+          league_uuid: string;
+          required_permission: string;
+        };
+        Returns: boolean;
+      };
+      is_league_admin: {
+        Args: {
+          league_uuid: string;
+        };
+        Returns: boolean;
+      };
+      is_league_secretary: {
+        Args: {
+          league_uuid: string;
+        };
+        Returns: boolean;
+      };
+      is_team_captain: {
+        Args: {
+          league_uuid: string;
+        };
+        Returns: boolean;
+      };
     };
     Enums: {
-      [_ in never]: never;
+      user_role: "superuser" | "league_admin" | "league_secretary" | "team_captain" | "team_secretary" | "player";
     };
     CompositeTypes: {
       [_ in never]: never;

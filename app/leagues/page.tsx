@@ -31,16 +31,16 @@ type LeagueAdmin = Database["public"]["Tables"]["league_admins"]["Row"] & {
 
 // Extended type for leagues with joined admin data
 type League = BaseLeague & {
-  league_admins: {
+  league_permissions: Array<{
     id: string;
-    league_id: string;
     user_id: string;
+    permission_type: string;
     created_at: string;
     users: {
       first_name: string | null;
       last_name: string | null;
     };
-  };
+  }>;
 };
 
 type LeagueScheduleType = "single_day" | "multiple_days";
@@ -57,21 +57,14 @@ type LeagueRules = "BCA" | "APA" | "Bar" | "House";
 
 // Move LeagueAdminDisplay component outside of loadInitialData
 const LeagueAdminDisplay = ({ league }: { league: League }) => {
-  console.log("League in display:", league);
-  console.log("League admins:", league.league_admins);
-  console.log("First admin:", league.league_admins?.users);
-  console.log("First admin's user data:", league.league_admins?.users);
-
   return (
     <div className="flex justify-between text-sm">
       <span>Administrator: </span>
       <span>
-        {league.league_admins?.users
+        {league.league_permissions && league.league_permissions.find((p) => p.permission_type === "league_admin")?.users
           ? (() => {
-              const adminName = `${league.league_admins.users.first_name || ""} ${
-                league.league_admins.users.last_name || ""
-              }`.trim();
-              console.log("Admin name being rendered:", adminName);
+              const admin = league.league_permissions.find((p) => p.permission_type === "league_admin");
+              const adminName = `${admin?.users.first_name || ""} ${admin?.users.last_name || ""}`.trim();
               return adminName || "Not Found";
             })()
           : "Not Found"}
@@ -91,6 +84,11 @@ export default function LeaguesPage() {
   const [selectedAdminId, setSelectedAdminId] = useState<string | null>(null);
   const [changeAdminDialogOpen, setChangeAdminDialogOpen] = useState(false);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
+  // Add state for selected league secretary ID
+  const [selectedSecretaryId, setSelectedSecretaryId] = useState<string | null>(null);
+  // Add state for the dialog
+  const [assignSecretaryDialogOpen, setAssignSecretaryDialogOpen] = useState(false);
+  const [currentLeagueId, setCurrentLeagueId] = useState<string | null>(null);
   const [availableAdmins, setAvailableAdmins] = useState<
     Array<{
       id: string;
@@ -121,9 +119,6 @@ export default function LeaguesPage() {
 
   const supabase = createClientComponentClient<Database>();
 
-  // Add state for selected league secretary ID
-  const [selectedSecretaryId, setSelectedSecretaryId] = useState<string | null>(null);
-
   const loadInitialData = useCallback(async () => {
     if (!user?.id) return;
 
@@ -134,12 +129,12 @@ export default function LeaguesPage() {
         supabase.from("users").select("role").eq("id", user.id).single(),
         supabase.from("leagues").select(`
           *,
-          league_admins!league_admins_league_id_fkey (
+          league_permissions!league_permissions_league_id_fkey (
             id,
             user_id,
-            league_id,
+            permission_type,
             created_at,
-            users!league_admins_user_id_fkey (
+            users!league_permissions_user_id_fkey (
               first_name,
               last_name
             )
@@ -155,13 +150,13 @@ export default function LeaguesPage() {
 
       setUserRole(userResponse.data.role);
 
+      // Filter leagues based on role
       const filteredData =
         userResponse.data.role === "superuser"
           ? leaguesResponse.data
           : leaguesResponse.data.filter((league) => league.created_by === user.id);
 
       console.log("Filtered Leagues Data:", filteredData);
-
       setLeagues(filteredData);
       setFilteredLeagues(filteredData);
     } catch (error) {
@@ -181,6 +176,13 @@ export default function LeaguesPage() {
     loadInitialData();
   }, [loadInitialData]);
 
+  // Load available admins when dialog opens
+  useEffect(() => {
+    if (userRole === "superuser" && changeAdminDialogOpen) {
+      fetchAvailableAdmins();
+    }
+  }, [userRole, changeAdminDialogOpen]);
+
   const canCreateLeague = userRole === "superuser" || userRole === "league_admin";
 
   // Add function to fetch available admins
@@ -198,7 +200,6 @@ export default function LeaguesPage() {
         `
         )
         .order("first_name");
-      console.log(data + "fetchAdmins Data");
       if (error) {
         console.error("Error fetching users:", error);
         toast({
@@ -214,13 +215,6 @@ export default function LeaguesPage() {
       console.error("Error:", error);
     }
   };
-
-  // Load available admins when dialog opens
-  useEffect(() => {
-    if (userRole === "superuser" && changeAdminDialogOpen) {
-      fetchAvailableAdmins();
-    }
-  }, [userRole, changeAdminDialogOpen]);
 
   const handleCreateLeague = async () => {
     try {
@@ -430,10 +424,6 @@ export default function LeaguesPage() {
     [leagues]
   );
 
-  // Add state for the dialog
-  const [assignSecretaryDialogOpen, setAssignSecretaryDialogOpen] = useState(false);
-  const [currentLeagueId, setCurrentLeagueId] = useState<string | null>(null);
-
   // Function to open the dialog
   const openAssignSecretaryDialog = async (leagueId: string) => {
     setCurrentLeagueId(leagueId);
@@ -530,33 +520,31 @@ export default function LeaguesPage() {
     </DialogContent>
   </Dialog>;
 
-  // Add this function to handle changing the league admin
+  // Add new types
+  type Permission = "league_admin" | "league_secretary" | "team_captain" | "team_secretary";
+
+  type LeaguePermission = {
+    id: string;
+    league_id: string;
+    user_id: string;
+    permission_type: Permission;
+    created_at: string;
+  };
+
+  // Update the handleChangeAdmin function to use new permissions
   const handleChangeAdmin = async (leagueId: string, newAdminId: string) => {
     try {
-      // First check if the new admin is already an admin for this league
-      const { data: currentAdmins, error: fetchError } = await supabase
-        .from("league_admins")
-        .select(
-          `
-          id,
-          user_id,
-          league_id,
-          users!league_admins_user_id_fkey (
-            first_name,
-            last_name,
-            role
-          )
-        `
-        )
-        .eq("league_id", leagueId);
+      // First check if the new admin already has this permission
+      const { data: existingPermissions, error: checkError } = await supabase
+        .from("league_permissions")
+        .select("*")
+        .eq("league_id", leagueId)
+        .eq("user_id", newAdminId)
+        .eq("permission_type", "league_admin");
 
-      if (fetchError) {
-        console.error("Error fetching current admins:", fetchError);
-        throw fetchError;
-      }
+      if (checkError) throw checkError;
 
-      // Check if the new admin is already an admin
-      if (currentAdmins?.some((admin) => admin.user_id === newAdminId)) {
+      if (existingPermissions && existingPermissions.length > 0) {
         toast({
           variant: "destructive",
           title: "Error",
@@ -565,110 +553,33 @@ export default function LeaguesPage() {
         return;
       }
 
-      // Update the existing admin record instead of deleting and inserting
-      if (currentAdmins && currentAdmins.length > 0) {
-        const oldAdmin = currentAdmins[0];
+      // Remove old admin permissions
+      const { error: deleteError } = await supabase
+        .from("league_permissions")
+        .delete()
+        .eq("league_id", leagueId)
+        .eq("permission_type", "league_admin");
 
-        // Check if the old admin is a superuser - if so, don't change their role
-        const isSuperuser = oldAdmin.users?.role === "superuser";
+      if (deleteError) throw deleteError;
 
-        // Update the existing record
-        const { error: updateError } = await supabase
-          .from("league_admins")
-          .update({ user_id: newAdminId })
-          .eq("league_id", leagueId)
-          .eq("id", oldAdmin.id);
+      // Add new admin permission
+      const { error: insertError } = await supabase.from("league_permissions").insert({
+        league_id: leagueId,
+        user_id: newAdminId,
+        permission_type: "league_admin",
+      });
 
-        if (updateError) {
-          console.error("Error updating admin:", updateError);
-          throw updateError;
-        }
+      if (insertError) throw insertError;
 
-        // Only check for other leagues and update role if the old admin is not a superuser
-        if (!isSuperuser) {
-          // Check if the old admin is an admin for any other leagues
-          const { data: otherLeagues, error: checkError } = await supabase
-            .from("league_admins")
-            .select("*")
-            .eq("user_id", oldAdmin.user_id);
+      // Refresh the league data
+      await loadInitialData();
 
-          if (checkError) {
-            console.error("Error checking other leagues:", checkError);
-            throw checkError;
-          }
-
-          // If this was their only league, update their role back to player
-          if (!otherLeagues || otherLeagues.length === 0) {
-            const { error: roleUpdateError } = await supabase
-              .from("users")
-              .update({ role: "player" })
-              .eq("id", oldAdmin.user_id);
-
-            if (roleUpdateError) {
-              console.error("Error updating old admin role:", roleUpdateError);
-              throw roleUpdateError;
-            }
-          }
-        }
-
-        // Update the new admin's role if they're not already a superuser
-        const { data: newAdminData, error: newAdminCheckError } = await supabase
-          .from("users")
-          .select("role")
-          .eq("id", newAdminId)
-          .single();
-
-        if (newAdminCheckError) {
-          console.error("Error checking new admin role:", newAdminCheckError);
-          throw newAdminCheckError;
-        }
-
-        if (newAdminData.role !== "superuser") {
-          const { error: userUpdateError } = await supabase
-            .from("users")
-            .update({ role: "league_admin" })
-            .eq("id", newAdminId);
-
-          if (userUpdateError) {
-            console.error("Error updating user role:", userUpdateError);
-            throw userUpdateError;
-          }
-        }
-
-        // Refresh the leagues data
-        const { data: updatedLeague, error: refreshError } = await supabase
-          .from("leagues")
-          .select(
-            `
-            *,
-            league_admins!league_admins_league_id_fkey (
-              user_id,
-              users!league_admins_user_id_fkey (
-                first_name,
-                last_name
-              )
-            )
-          `
-          )
-          .eq("id", leagueId)
-          .single();
-
-        if (refreshError) {
-          console.error("Error refreshing league data:", refreshError);
-          throw refreshError;
-        }
-
-        // Update the leagues state
-        setLeagues(leagues.map((league) => (league.id === leagueId ? updatedLeague : league)));
-        setFilteredLeagues(filteredLeagues.map((league) => (league.id === leagueId ? updatedLeague : league)));
-
-        toast({
-          title: "Success",
-          description: "League administrator changed successfully",
-        });
-        setChangeAdminDialogOpen(false);
-        setSelectedAdminId(null);
-      }
+      toast({
+        title: "Success",
+        description: "League administrator changed successfully",
+      });
+      setChangeAdminDialogOpen(false);
+      setSelectedAdminId(null);
     } catch (error) {
       console.error("Error changing league admin:", error);
       toast({
@@ -1121,11 +1032,11 @@ export default function LeaguesPage() {
                 <div className="flex justify-between text-sm">
                   <span>Administrator: </span>
                   <span>
-                    {league.league_admins?.users
+                    {league.league_permissions &&
+                    league.league_permissions.find((p) => p.permission_type === "league_admin")?.users
                       ? (() => {
-                          const adminName = `${league.league_admins.users.first_name || ""} ${
-                            league.league_admins.users.last_name || ""
-                          }`.trim();
+                          const admin = league.league_permissions.find((p) => p.permission_type === "league_admin");
+                          const adminName = `${admin?.users.first_name || ""} ${admin?.users.last_name || ""}`.trim();
                           return adminName || "Not Found";
                         })()
                       : "Not Found"}
