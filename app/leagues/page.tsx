@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import * as Icons from "@/components/icons";
 
 // Base type from database
 type BaseLeague = Database["public"]["Tables"]["leagues"]["Row"];
@@ -71,6 +72,20 @@ const LeagueAdminDisplay = ({ league }: { league: League }) => {
       </span>
     </div>
   );
+};
+
+// First, define the types at the top
+type AvailableAdmin = {
+  id: string;
+  first_name: string;
+  last_name: string;
+};
+
+type AdminDialogState = {
+  isOpen: boolean;
+  leagueId: string | null;
+  isLoading: boolean;
+  admins: AvailableAdmin[];
 };
 
 export default function LeaguesPage() {
@@ -590,81 +605,120 @@ export default function LeaguesPage() {
     }
   };
 
-  // Remove the useEffect for fetchAvailableAdmins and move it into the click handler
-  const openChangeAdminDialog = useCallback(
+  // Combine the related state
+  const [adminDialog, setAdminDialog] = useState<AdminDialogState>({
+    isOpen: false,
+    leagueId: null,
+    isLoading: false,
+    admins: [],
+  });
+
+  // Replace the separate open function with a single handler
+  const handleAdminDialogOpen = useCallback(
     async (leagueId: string) => {
-      setSelectedLeagueId(leagueId);
+      if (userRole !== "superuser") return;
 
-      if (userRole === "superuser") {
-        try {
-          const { data, error } = await supabase
-            .from("users")
-            .select(
-              `
-            id,
-            first_name,
-            last_name,
-            email,
-            role
-          `
-            )
-            .order("first_name");
+      setAdminDialog((prev) => ({
+        ...prev,
+        isOpen: true,
+        leagueId,
+        isLoading: true,
+        admins: [],
+      }));
 
-          if (error) throw error;
-          setAvailableAdmins(data || []);
-          setChangeAdminDialogOpen(true);
-        } catch (error) {
-          console.error("Error fetching users:", error);
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Failed to fetch users",
-          });
-        }
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select(
+            `
+          id,
+          first_name,
+          last_name
+        `
+          )
+          .order("first_name");
+
+        if (error) throw error;
+
+        const validAdmins = (data || []).filter(
+          (admin): admin is AvailableAdmin => admin.first_name !== null && admin.last_name !== null
+        );
+
+        setAdminDialog((prev) => ({
+          ...prev,
+          isLoading: false,
+          admins: validAdmins,
+        }));
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to fetch users",
+        });
+        handleAdminDialogClose();
       }
     },
     [userRole, supabase, toast]
   );
 
-  // Move the ChangeAdminDialog component outside of the main component
-  const ChangeAdminDialog = () => (
-    <Dialog open={changeAdminDialogOpen} onOpenChange={setChangeAdminDialogOpen}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>Change League Administrator</DialogTitle>
-          <DialogDescription>Select a new administrator for this league.</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="new-admin">New Administrator</Label>
-            <Select value={selectedAdminId || ""} onValueChange={setSelectedAdminId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select an administrator" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableAdmins.map((admin) => (
-                  <SelectItem key={admin.id} value={admin.id}>
-                    {admin.first_name} {admin.last_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            onClick={() => {
-              if (selectedLeagueId && selectedAdminId) {
-                handleChangeAdmin(selectedLeagueId, selectedAdminId);
-              }
-            }}
-          >
-            Save Changes
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+  // Add a close handler
+  const handleAdminDialogClose = useCallback(() => {
+    setAdminDialog((prev) => ({
+      ...prev,
+      isOpen: false,
+      leagueId: null,
+      admins: [],
+    }));
+    setSelectedAdminId(null);
+  }, []);
+
+  // Create a memoized dialog component
+  const AdminDialog = useMemo(() => {
+    const handleSave = async () => {
+      if (!adminDialog.leagueId || !selectedAdminId) return;
+      await handleChangeAdmin(adminDialog.leagueId, selectedAdminId);
+      handleAdminDialogClose();
+    };
+
+    return (
+      <Dialog open={adminDialog.isOpen} onOpenChange={(open) => !open && handleAdminDialogClose()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change League Administrator</DialogTitle>
+          </DialogHeader>
+          {adminDialog.isLoading ? (
+            <div className="flex justify-center p-4">
+              <Icons.spinner className="h-6 w-6" />
+            </div>
+          ) : (
+            <>
+              <Select value={selectedAdminId || undefined} onValueChange={setSelectedAdminId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an administrator" />
+                </SelectTrigger>
+                <SelectContent>
+                  {adminDialog.admins.map((admin) => (
+                    <SelectItem key={admin.id} value={admin.id}>
+                      {`${admin.first_name} ${admin.last_name}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <DialogFooter>
+                <Button variant="outline" onClick={handleAdminDialogClose}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSave} disabled={!selectedAdminId}>
+                  Save
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }, [adminDialog, selectedAdminId, handleAdminDialogClose, handleChangeAdmin]);
 
   if (loading) {
     return <div>Loading...</div>;
@@ -1052,7 +1106,7 @@ export default function LeaguesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {userRole === "superuser" && (
-                    <Button variant="outline" className="w-full" onClick={() => openChangeAdminDialog(league.id)}>
+                    <Button variant="outline" className="w-full" onClick={() => handleAdminDialogOpen(league.id)}>
                       Change Admin
                     </Button>
                   )}
@@ -1078,7 +1132,7 @@ export default function LeaguesPage() {
           </Card>
         ))}
       </div>
-      <ChangeAdminDialog />
+      {AdminDialog}
     </div>
   );
 }

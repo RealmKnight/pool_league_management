@@ -191,27 +191,27 @@ export interface Database {
       teams: {
         Row: {
           id: string;
-          league_id: string | null;
+          league_id: string;
           name: string;
           format: string;
-          created_at: string | null;
-          updated_at: string | null;
+          created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
-          league_id?: string | null;
+          league_id: string;
           name: string;
           format: string;
-          created_at?: string | null;
-          updated_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
-          league_id?: string | null;
+          league_id?: string;
           name?: string;
           format?: string;
-          created_at?: string | null;
-          updated_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [
           {
@@ -226,38 +226,38 @@ export interface Database {
       team_players: {
         Row: {
           id: string;
-          team_id: string | null;
-          league_id: string | null;
-          user_id: string | null;
-          created_at: string | null;
+          team_id: string;
+          league_id: string;
+          user_id: string;
+          created_at: string;
         };
         Insert: {
           id?: string;
-          team_id?: string | null;
-          league_id?: string | null;
-          user_id?: string | null;
-          created_at?: string | null;
+          team_id: string;
+          league_id: string;
+          user_id: string;
+          created_at?: string;
         };
         Update: {
           id?: string;
-          team_id?: string | null;
-          league_id?: string | null;
-          user_id?: string | null;
-          created_at?: string | null;
+          team_id?: string;
+          league_id?: string;
+          user_id?: string;
+          created_at?: string;
         };
         Relationships: [
-          {
-            foreignKeyName: "team_players_league_id_fkey";
-            columns: ["league_id"];
-            isOneToOne: false;
-            referencedRelation: "leagues";
-            referencedColumns: ["id"];
-          },
           {
             foreignKeyName: "team_players_team_id_fkey";
             columns: ["team_id"];
             isOneToOne: false;
             referencedRelation: "teams";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_players_league_id_fkey";
+            columns: ["league_id"];
+            isOneToOne: false;
+            referencedRelation: "leagues";
             referencedColumns: ["id"];
           },
           {
@@ -272,33 +272,33 @@ export interface Database {
       matches: {
         Row: {
           id: string;
-          league_id: string | null;
-          home_team_id: string | null;
-          away_team_id: string | null;
+          league_id: string;
+          home_team_id: string;
+          away_team_id: string;
           match_date: string;
-          status: string | null;
-          created_at: string | null;
-          updated_at: string | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
-          league_id?: string | null;
-          home_team_id?: string | null;
-          away_team_id?: string | null;
+          league_id: string;
+          home_team_id: string;
+          away_team_id: string;
           match_date: string;
-          status?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
-          league_id?: string | null;
-          home_team_id?: string | null;
-          away_team_id?: string | null;
+          league_id?: string;
+          home_team_id?: string;
+          away_team_id?: string;
           match_date?: string;
-          status?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [
           {
@@ -327,56 +327,56 @@ export interface Database {
       games: {
         Row: {
           id: string;
-          match_id: string | null;
-          league_id: string | null;
-          home_player_id: string | null;
-          away_player_id: string | null;
-          home_score: number | null;
-          away_score: number | null;
+          match_id: string;
+          league_id: string;
+          home_player_id: string;
+          away_player_id: string;
+          home_score: number;
+          away_score: number;
           game_number: number;
-          status: string | null;
-          created_at: string | null;
-          updated_at: string | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
-          match_id?: string | null;
-          league_id?: string | null;
-          home_player_id?: string | null;
-          away_player_id?: string | null;
-          home_score?: number | null;
-          away_score?: number | null;
+          match_id: string;
+          league_id: string;
+          home_player_id: string;
+          away_player_id: string;
+          home_score?: number;
+          away_score?: number;
           game_number: number;
-          status?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
-          match_id?: string | null;
-          league_id?: string | null;
-          home_player_id?: string | null;
-          away_player_id?: string | null;
-          home_score?: number | null;
-          away_score?: number | null;
+          match_id?: string;
+          league_id?: string;
+          home_player_id?: string;
+          away_player_id?: string;
+          home_score?: number;
+          away_score?: number;
           game_number?: number;
-          status?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [
-          {
-            foreignKeyName: "games_league_id_fkey";
-            columns: ["league_id"];
-            isOneToOne: false;
-            referencedRelation: "leagues";
-            referencedColumns: ["id"];
-          },
           {
             foreignKeyName: "games_match_id_fkey";
             columns: ["match_id"];
             isOneToOne: false;
             referencedRelation: "matches";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "games_league_id_fkey";
+            columns: ["league_id"];
+            isOneToOne: false;
+            referencedRelation: "leagues";
             referencedColumns: ["id"];
           },
           {
