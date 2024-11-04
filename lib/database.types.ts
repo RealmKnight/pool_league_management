@@ -108,6 +108,7 @@ export interface Database {
               last_name: string;
             };
           }[];
+          open_registration: boolean;
         };
         Insert: {
           id?: string;
@@ -123,6 +124,7 @@ export interface Database {
           schedule?: Json;
           estimated_weeks?: number;
           team_count?: number;
+          open_registration?: boolean;
         };
         Update: {
           id?: string;
@@ -138,6 +140,7 @@ export interface Database {
           schedule?: Json;
           estimated_weeks?: number;
           team_count?: number;
+          open_registration?: boolean;
         };
         Relationships: [
           {
@@ -155,21 +158,21 @@ export interface Database {
           league_id: string;
           user_id: string;
           permission_type: string;
-          created_at: string | null;
+          created_at: string;
         };
         Insert: {
           id?: string;
           league_id: string;
           user_id: string;
           permission_type: string;
-          created_at?: string | null;
+          created_at?: string;
         };
         Update: {
           id?: string;
           league_id?: string;
           user_id?: string;
           permission_type?: string;
-          created_at?: string | null;
+          created_at?: string;
         };
         Relationships: [
           {
@@ -196,6 +199,7 @@ export interface Database {
           format: string;
           created_at: string;
           updated_at: string;
+          created_by: string;
         };
         Insert: {
           id?: string;
@@ -204,6 +208,7 @@ export interface Database {
           format: string;
           created_at?: string;
           updated_at?: string;
+          created_by: string;
         };
         Update: {
           id?: string;
@@ -212,6 +217,7 @@ export interface Database {
           format?: string;
           created_at?: string;
           updated_at?: string;
+          created_by?: string;
         };
         Relationships: [
           {
@@ -219,6 +225,13 @@ export interface Database {
             columns: ["league_id"];
             isOneToOne: false;
             referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "teams_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "users";
             referencedColumns: ["id"];
           }
         ];
@@ -395,6 +408,48 @@ export interface Database {
           }
         ];
       };
+      team_join_requests: {
+        Row: {
+          id: string;
+          league_id: string;
+          team_id: string;
+          status: "pending" | "approved" | "rejected";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          league_id: string;
+          team_id: string;
+          status?: "pending" | "approved" | "rejected";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          league_id?: string;
+          team_id?: string;
+          status?: "pending" | "approved" | "rejected";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "team_join_requests_league_id_fkey";
+            columns: ["league_id"];
+            isOneToOne: false;
+            referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_join_requests_team_id_fkey";
+            columns: ["team_id"];
+            isOneToOne: false;
+            referencedRelation: "teams";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -429,9 +484,17 @@ export interface Database {
         };
         Returns: boolean;
       };
+      manage_league_secretary: {
+        Args: {
+          p_league_id: string;
+          p_user_id: string;
+        };
+        Returns: void;
+      };
     };
     Enums: {
       user_role: "superuser" | "league_admin" | "league_secretary" | "team_captain" | "team_secretary" | "player";
+      league_registration_type: "invite_only" | "approval_required" | "open";
     };
     CompositeTypes: {
       [_ in never]: never;

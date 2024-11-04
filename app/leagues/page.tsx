@@ -26,11 +26,8 @@ import * as Icons from "@/components/icons";
 
 // Base type from database
 type BaseLeague = Database["public"]["Tables"]["leagues"]["Row"];
-type LeagueAdmin = Database["public"]["Tables"]["league_admins"]["Row"] & {
-  users: Pick<Database["public"]["Tables"]["users"]["Row"], "first_name" | "last_name">;
-};
 
-// Extended type for leagues with joined admin data
+// Update League type to match the database structure
 type League = BaseLeague & {
   league_permissions: Array<{
     id: string;
@@ -107,8 +104,8 @@ export default function LeaguesPage() {
   const [availableAdmins, setAvailableAdmins] = useState<
     Array<{
       id: string;
-      first_name: string;
-      last_name: string;
+      first_name: string | null;
+      last_name: string | null;
     }>
   >([]);
 
@@ -130,6 +127,7 @@ export default function LeaguesPage() {
     },
     estimated_weeks: 0,
     team_count: 8, // Default to 8 teams
+    registration_type: "invite_only" as Database["public"]["Enums"]["league_registration_type"],
   });
 
   const supabase = createClientComponentClient<Database>();
@@ -157,23 +155,14 @@ export default function LeaguesPage() {
         `),
       ]);
 
-      console.log("User Response:", userResponse);
-      console.log("Leagues Response:", leaguesResponse);
-
       if (userResponse.error) throw userResponse.error;
       if (leaguesResponse.error) throw leaguesResponse.error;
 
       setUserRole(userResponse.data.role);
-
-      // Filter leagues based on role
-      const filteredData =
-        userResponse.data.role === "superuser"
-          ? leaguesResponse.data
-          : leaguesResponse.data.filter((league) => league.created_by === user.id);
-
-      console.log("Filtered Leagues Data:", filteredData);
-      setLeagues(filteredData);
-      setFilteredLeagues(filteredData);
+      // Remove the filtering - show all leagues to all users
+      const leaguesData = leaguesResponse.data;
+      setLeagues(leaguesData);
+      setFilteredLeagues(leaguesData);
     } catch (error) {
       console.error("Error loading data:", error);
       toast({
@@ -274,6 +263,7 @@ export default function LeaguesPage() {
           schedule: newLeague.schedule,
           estimated_weeks: newLeague.estimated_weeks,
           team_count: newLeague.team_count,
+          registration_type: newLeague.registration_type,
         })
         .select()
         .single();
@@ -282,60 +272,41 @@ export default function LeaguesPage() {
 
       // If superuser is creating the league and selected an admin
       if (userRole === "superuser" && selectedAdminId) {
-        const { error: adminError } = await supabase.from("league_admins").insert({
+        const { error: permissionError } = await supabase.from("league_permissions").insert({
           league_id: leagueData.id,
           user_id: selectedAdminId,
+          permission_type: "league_admin",
         });
 
-        if (adminError) throw adminError;
-
-        // Fetch the updated league data with the admin information
-        const { data: updatedLeague, error: fetchError } = await supabase
-          .from("leagues")
-          .select(
-            `
-            *,
-            league_admins!league_admins_league_id_fkey (
-              user_id,
-              users!league_admins_user_id_fkey (
-                first_name,
-                last_name
-              )
-            )
-          `
-          )
-          .eq("id", leagueData.id)
-          .single();
-
-        if (fetchError) throw fetchError;
-
-        // Update the leagues state with the complete data
-        setLeagues([...leagues, updatedLeague]);
-        setFilteredLeagues([...filteredLeagues, updatedLeague]);
-      } else {
-        // For non-superusers, fetch the updated league data after the trigger creates the admin
-        const { data: updatedLeague, error: fetchError } = await supabase
-          .from("leagues")
-          .select(
-            `
-            *,
-            league_admins!league_admins_league_id_fkey (
-              user_id,
-              users!league_admins_user_id_fkey (
-                first_name,
-                last_name
-              )
-            )
-          `
-          )
-          .eq("id", leagueData.id)
-          .single();
-
-        if (fetchError) throw fetchError;
-
-        setLeagues([...leagues, updatedLeague]);
-        setFilteredLeagues([...filteredLeagues, updatedLeague]);
+        if (permissionError) throw permissionError;
       }
+
+      // Fetch the updated league data
+      const { data: updatedLeague, error: fetchError } = await supabase
+        .from("leagues")
+        .select(
+          `
+          *,
+          league_permissions (
+            id,
+            user_id,
+            permission_type,
+            created_at,
+            users (
+              first_name,
+              last_name
+            )
+          )
+        `
+        )
+        .eq("id", leagueData.id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Update states
+      setLeagues([...leagues, updatedLeague]);
+      setFilteredLeagues([...filteredLeagues, updatedLeague]);
 
       toast({
         title: "Success",
@@ -361,6 +332,7 @@ export default function LeaguesPage() {
         },
         estimated_weeks: 0,
         team_count: 8,
+        registration_type: "invite_only" as Database["public"]["Enums"]["league_registration_type"],
       });
 
       // Reset the admin selection
@@ -476,64 +448,6 @@ export default function LeaguesPage() {
       });
     }
   };
-
-  // Dialog for assigning a league secretary
-  <Dialog open={assignSecretaryDialogOpen} onOpenChange={setAssignSecretaryDialogOpen}>
-    <DialogTrigger asChild>
-      <Button>Assign League Secretary</Button>
-    </DialogTrigger>
-    <DialogContent className="max-w-md">
-      <DialogHeader>
-        <DialogTitle>Assign League Secretary</DialogTitle>
-        <DialogDescription>Select a user to assign as the league secretary.</DialogDescription>
-      </DialogHeader>
-      <Select
-        id="league-secretary-select"
-        value={selectedSecretaryId}
-        onValueChange={(value) => setSelectedSecretaryId(value)}
-      >
-        <SelectTrigger>
-          <SelectValue placeholder="Select a user" />
-        </SelectTrigger>
-        // Start of Selection
-        <SelectContent>
-          {availableAdmins.map((user) => (
-            <SelectItem key={user.id} value={user.id}>
-              {user.first_name} {user.last_name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Button
-        onClick={async () => {
-          if (selectedSecretaryId && currentLeagueId) {
-            const { error } = await supabase.from("league_secretaries").insert({
-              league_id: currentLeagueId,
-              user_id: selectedSecretaryId,
-            });
-
-            if (error) {
-              console.error("Error assigning league secretary:", error);
-              toast({
-                variant: "destructive",
-                title: "Error",
-                description: "Failed to assign league secretary",
-              });
-            } else {
-              toast({
-                title: "Success",
-                description: "League secretary assigned successfully",
-              });
-              // Optionally refresh the list of secretaries or leagues
-              setAssignSecretaryDialogOpen(false);
-            }
-          }
-        }}
-      >
-        Assign Secretary
-      </Button>
-    </DialogContent>
-  </Dialog>;
 
   // Add new types
   type Permission = "league_admin" | "league_secretary" | "team_captain" | "team_secretary";
@@ -719,6 +633,146 @@ export default function LeaguesPage() {
       </Dialog>
     );
   }, [adminDialog, selectedAdminId, handleAdminDialogClose, handleChangeAdmin]);
+
+  // First, add these helper functions near the top of the component
+  const isLeagueAdmin = (league: League, userId: string) => {
+    return league.league_permissions?.some((p) => p.permission_type === "league_admin" && p.user_id === userId);
+  };
+
+  const canManageSecretaries = (league: League, userId: string, userRole: string | null) => {
+    return userRole === "superuser" || isLeagueAdmin(league, userId);
+  };
+
+  // Add state for secretary dialog
+  const [secretaryDialog, setSecretaryDialog] = useState<{
+    isOpen: boolean;
+    leagueId: string | null;
+    isLoading: boolean;
+    availableUsers: Array<{ id: string; first_name: string | null; last_name: string | null }>;
+  }>({
+    isOpen: false,
+    leagueId: null,
+    isLoading: false,
+    availableUsers: [],
+  });
+
+  // Add secretary management functions
+  const handleSecretaryDialogOpen = useCallback(
+    async (leagueId: string) => {
+      setSecretaryDialog((prev) => ({
+        ...prev,
+        isOpen: true,
+        leagueId,
+        isLoading: true,
+      }));
+
+      try {
+        const { data, error } = await supabase.from("users").select("id, first_name, last_name").order("first_name");
+
+        if (error) throw error;
+
+        setSecretaryDialog((prev) => ({
+          ...prev,
+          isLoading: false,
+          availableUsers: data || [],
+        }));
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to fetch users",
+        });
+        handleSecretaryDialogClose();
+      }
+    },
+    [supabase, toast]
+  );
+
+  const handleSecretaryDialogClose = () => {
+    setSecretaryDialog({
+      isOpen: false,
+      leagueId: null,
+      isLoading: false,
+      availableUsers: [],
+    });
+    setSelectedSecretaryId(null);
+  };
+
+  const handleChangeSecretary = async (leagueId: string, newSecretaryId: string) => {
+    try {
+      // Start a transaction using single supabase call
+      const { error: permissionError } = await supabase.rpc("manage_league_secretary", {
+        p_league_id: leagueId,
+        p_user_id: newSecretaryId,
+      });
+
+      if (permissionError) throw permissionError;
+
+      // Refresh the league data
+      await loadInitialData();
+
+      toast({
+        title: "Success",
+        description: "League secretary changed successfully",
+      });
+      handleSecretaryDialogClose();
+    } catch (error) {
+      console.error("Error changing league secretary:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to change league secretary",
+      });
+    }
+  };
+
+  // Add the Secretary Dialog component
+  const SecretaryDialog = useMemo(() => {
+    const handleSave = async () => {
+      if (!secretaryDialog.leagueId || !selectedSecretaryId) return;
+      await handleChangeSecretary(secretaryDialog.leagueId, selectedSecretaryId);
+    };
+
+    return (
+      <Dialog open={secretaryDialog.isOpen} onOpenChange={(open) => !open && handleSecretaryDialogClose()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change League Secretary</DialogTitle>
+            <DialogDescription>Select a user to assign as the league secretary.</DialogDescription>
+          </DialogHeader>
+          {secretaryDialog.isLoading ? (
+            <div className="flex justify-center p-4">
+              <Icons.spinner className="h-6 w-6" />
+            </div>
+          ) : (
+            <>
+              <Select value={selectedSecretaryId || undefined} onValueChange={setSelectedSecretaryId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a secretary" />
+                </SelectTrigger>
+                <SelectContent>
+                  {secretaryDialog.availableUsers.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {`${user.first_name || ""} ${user.last_name || ""}`.trim() || "Unnamed User"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <DialogFooter>
+                <Button variant="outline" onClick={handleSecretaryDialogClose}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSave} disabled={!selectedSecretaryId}>
+                  Save
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }, [secretaryDialog, selectedSecretaryId]);
 
   if (loading) {
     return <div>Loading...</div>;
@@ -1040,6 +1094,37 @@ export default function LeaguesPage() {
                   </div>
                 )}
 
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="registration-type">League Registration</Label>
+                    <Select
+                      value={newLeague.registration_type}
+                      onValueChange={(value: Database["public"]["Enums"]["league_registration_type"]) =>
+                        setNewLeague({
+                          ...newLeague,
+                          registration_type: value,
+                        })
+                      }
+                    >
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue placeholder="Select registration type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="invite_only">By Invitation Only</SelectItem>
+                        <SelectItem value="approval_required">Approval Required</SelectItem>
+                        <SelectItem value="open">Open Registration</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {newLeague.registration_type === "invite_only"
+                      ? "Teams need to be invited to join this league"
+                      : newLeague.registration_type === "approval_required"
+                      ? "Teams can apply to join but need approval"
+                      : "Any team can join this league without approval"}
+                  </p>
+                </div>
+
                 <div className="sticky bottom-0 bg-background pt-4">
                   <Button type="submit" className="w-full">
                     Create League
@@ -1097,10 +1182,19 @@ export default function LeaguesPage() {
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>League Secretary: </span>
+                  <span>Secretary: </span>
                   <span>
-                    {league.secretary_id
-                      ? `${league.secretary_first_name} ${league.secretary_last_name}`
+                    {league.league_permissions &&
+                    league.league_permissions.find((p) => p.permission_type === "league_secretary")?.users
+                      ? (() => {
+                          const secretary = league.league_permissions.find(
+                            (p) => p.permission_type === "league_secretary"
+                          );
+                          const secretaryName = `${secretary?.users.first_name || ""} ${
+                            secretary?.users.last_name || ""
+                          }`.trim();
+                          return secretaryName || "Not Assigned";
+                        })()
                       : "Not Assigned"}
                   </span>
                 </div>
@@ -1108,6 +1202,11 @@ export default function LeaguesPage() {
                   {userRole === "superuser" && (
                     <Button variant="outline" className="w-full" onClick={() => handleAdminDialogOpen(league.id)}>
                       Change Admin
+                    </Button>
+                  )}
+                  {canManageSecretaries(league, user?.id || "", userRole) && (
+                    <Button variant="outline" className="w-full" onClick={() => handleSecretaryDialogOpen(league.id)}>
+                      Change Secretary
                     </Button>
                   )}
                   <Button variant="outline" className="w-full">
@@ -1133,6 +1232,7 @@ export default function LeaguesPage() {
         ))}
       </div>
       {AdminDialog}
+      {SecretaryDialog}
     </div>
   );
 }
