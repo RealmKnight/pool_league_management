@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as Icons from "@/components/icons";
+import { useRouter } from "next/navigation";
 
 // Base type from database
 type BaseLeague = Database["public"]["Tables"]["leagues"]["Row"];
@@ -639,8 +640,16 @@ export default function LeaguesPage() {
     return league.league_permissions?.some((p) => p.permission_type === "league_admin" && p.user_id === userId);
   };
 
+  const isLeagueSecretary = (league: League, userId: string) => {
+    return league.league_permissions?.some((p) => p.permission_type === "league_secretary" && p.user_id === userId);
+  };
+
   const canManageSecretaries = (league: League, userId: string, userRole: string | null) => {
     return userRole === "superuser" || isLeagueAdmin(league, userId);
+  };
+
+  const canManageLeague = (league: League, userId: string, userRole: string | null) => {
+    return userRole === "superuser" || isLeagueAdmin(league, userId) || isLeagueSecretary(league, userId);
   };
 
   // Add state for secretary dialog
@@ -774,384 +783,78 @@ export default function LeaguesPage() {
     );
   }, [secretaryDialog, selectedSecretaryId]);
 
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleIconClick = () => {
+    setIsSearchVisible(true);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+  };
+
+  // Hide the search input when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (inputRef.current && !inputRef.current.contains(event.target as Node)) {
+        setIsSearchVisible(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const router = useRouter();
+
+  const handleNavigation = (leagueId: string, tab?: string) => {
+    const baseUrl = `/leagues/${leagueId}`;
+    const url = tab ? `${baseUrl}?tab=${tab}` : baseUrl;
+    router.push(url);
+  };
+
   if (loading) {
     return <div>Loading...</div>;
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex-grow text-center">
           <h3 className="text-lg font-medium">Pool Leagues</h3>
-          {canCreateLeague && <p className="text-sm text-muted-foreground">Create and manage your pool leagues.</p>}
         </div>
-        {canCreateLeague && (
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Create League
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-4 mx-2">
-                <DialogTitle className="text-center">Create New League</DialogTitle>
-                <DialogDescription className="text-center">Enter the details for your new league.</DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleCreateLeague} className="space-y-6">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="league-name">League Name</Label>
-                    <Input
-                      id="league-name"
-                      name="league-name"
-                      autoComplete="organization"
-                      value={newLeague.name}
-                      onChange={(e) => setNewLeague({ ...newLeague, name: e.target.value })}
-                      placeholder="Enter league name"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="league-description">Description</Label>
-                    <Textarea
-                      id="league-description"
-                      name="league-description"
-                      autoComplete="off"
-                      value={newLeague.description}
-                      onChange={(e) => setNewLeague({ ...newLeague, description: e.target.value })}
-                      placeholder="Enter league description"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="league-rules">League Rules</Label>
-                  <Select
-                    value={newLeague.rules.type}
-                    onValueChange={(value: LeagueRules) =>
-                      setNewLeague({
-                        ...newLeague,
-                        rules: {
-                          ...newLeague.rules,
-                          type: value,
-                        },
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select rules" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="BCA">BCA Rules</SelectItem>
-                      <SelectItem value="APA">APA Rules</SelectItem>
-                      <SelectItem value="Bar">Bar Rules</SelectItem>
-                      <SelectItem value="House">House Rules</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    {newLeague.rules.type === "BCA" && "Billiards Congress of America official rules"}
-                    {newLeague.rules.type === "APA" && "American Poolplayers Association handicap system"}
-                    {newLeague.rules.type === "Bar" && "Standard bar rules with local modifications"}
-                    {newLeague.rules.type === "House" && "House rules agreed upon by league members"}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="league-format">League Format</Label>
-                  <Select
-                    value={newLeague.format}
-                    onValueChange={(value: LeagueFormat) =>
-                      setNewLeague({
-                        ...newLeague,
-                        format: value,
-                        estimated_weeks: calculateEstimatedWeeks(value, 8), // Assuming 8 teams for now
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select format" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="round_robin">Round Robin</SelectItem>
-                      <SelectItem value="bracket">Bracket</SelectItem>
-                      <SelectItem value="swiss">Swiss System</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="team-count">Number of Teams</Label>
-                    <div className="flex items-center space-x-2">
-                      <Select
-                        value={newLeague.team_count.toString()}
-                        onValueChange={(value) => handleTeamCountChange(value)}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select number of teams" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[200px] overflow-y-auto">
-                          {Array.from({ length: 122 }, (_, i) => i + 7).map((count) => (
-                            <SelectItem key={count} value={count.toString()}>
-                              {count} Teams {count % 2 !== 0 && "(+1 bye team)"}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {newLeague.rules.has_bye_team && (
-                        <span className="text-sm text-muted-foreground whitespace-nowrap">(+1 bye team)</span>
-                      )}
-                    </div>
-                    {newLeague.rules.has_bye_team && (
-                      <p className="text-sm text-muted-foreground">
-                        A bye team will be added to enable scheduling. Teams playing against the bye team will
-                        automatically win.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Schedule Type</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <Button
-                        type="button"
-                        variant={newLeague.schedule.type === "single_day" ? "default" : "outline"}
-                        onClick={() =>
-                          setNewLeague({
-                            ...newLeague,
-                            schedule: { ...newLeague.schedule, type: "single_day", days: [] },
-                          })
-                        }
-                      >
-                        Single Day
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={newLeague.schedule.type === "multiple_days" ? "default" : "outline"}
-                        onClick={() =>
-                          setNewLeague({
-                            ...newLeague,
-                            schedule: { ...newLeague.schedule, type: "multiple_days", days: [] },
-                          })
-                        }
-                      >
-                        Multiple Days
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>League Days</Label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                      {(
-                        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as WeekDay[]
-                      ).map((day) => (
-                        <Button
-                          key={day}
-                          type="button"
-                          variant={newLeague.schedule.days.includes(day) ? "default" : "outline"}
-                          onClick={() => {
-                            const maxDays = newLeague.schedule.type === "single_day" ? 1 : 3;
-                            setNewLeague({
-                              ...newLeague,
-                              schedule: {
-                                ...newLeague.schedule,
-                                days: newLeague.schedule.days.includes(day)
-                                  ? newLeague.schedule.days.filter((d) => d !== day)
-                                  : newLeague.schedule.days.length < maxDays
-                                  ? [...newLeague.schedule.days, day]
-                                  : newLeague.schedule.days,
-                              },
-                            });
-                          }}
-                          disabled={
-                            !newLeague.schedule.days.includes(day) &&
-                            newLeague.schedule.days.length >= (newLeague.schedule.type === "single_day" ? 1 : 3)
-                          }
-                        >
-                          {day}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="start-time">Start Time</Label>
-                    <Select
-                      value={newLeague.schedule.start_time}
-                      onValueChange={(value) =>
-                        setNewLeague({
-                          ...newLeague,
-                          schedule: { ...newLeague.schedule, start_time: value },
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select start time" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TIME_OPTIONS.map((time) => (
-                          <SelectItem key={time} value={time}>
-                            {time}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="season-start">Season Start</Label>
-                    <DatePicker
-                      date={newLeague.season_start}
-                      onChange={(date) => {
-                        if (date) {
-                          // Calculate suggested end date based on estimated weeks
-                          const suggestedEndDate = calculateEndDate(date, newLeague.estimated_weeks);
-                          setNewLeague({
-                            ...newLeague,
-                            season_start: date,
-                            season_end: suggestedEndDate,
-                          });
-                        } else {
-                          setNewLeague({
-                            ...newLeague,
-                            season_start: null,
-                            season_end: null,
-                          });
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="season-end">Season End</Label>
-                    <DatePicker
-                      date={newLeague.season_end}
-                      onChange={(date) => setNewLeague({ ...newLeague, season_end: date })}
-                      disabled={!newLeague.season_start} // Disable if no start date
-                      minDate={newLeague.season_start || undefined} // Can't pick date before start
-                    />
-                    {newLeague.season_start && newLeague.estimated_weeks > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Suggested end date based on {newLeague.estimated_weeks} weeks of play. You can adjust this for
-                        additional events.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {newLeague.estimated_weeks > 0 && (
-                  <div className="text-sm space-y-1">
-                    <p className="font-medium">League Duration Details:</p>
-                    <ul className="text-muted-foreground list-disc list-inside">
-                      <li>
-                        Teams: {newLeague.team_count}
-                        {newLeague.rules.has_bye_team && ` (+1 bye team)`}
-                      </li>
-                      <li>
-                        Format:{" "}
-                        {newLeague.format === "round_robin"
-                          ? "Round Robin (home & away)"
-                          : newLeague.format === "bracket"
-                          ? "Single Elimination Bracket"
-                          : "Swiss System"}
-                      </li>
-                      <li>Estimated Duration: {newLeague.estimated_weeks} weeks</li>
-                      {newLeague.format === "round_robin" && (
-                        <>
-                          <li>Games per Team: {(newLeague.rules.actual_team_count - 1) * 2}</li>
-                          {newLeague.rules.has_bye_team && (
-                            <li className="text-yellow-500">
-                              Note: Teams will automatically win when scheduled against the bye team
-                            </li>
-                          )}
-                        </>
-                      )}
-                    </ul>
-                  </div>
-                )}
-
-                {userRole === "superuser" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="league-admin">League Administrator</Label>
-                    <Select value={selectedAdminId || undefined} onValueChange={(value) => setSelectedAdminId(value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select an administrator" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableAdmins.map((admin) => (
-                          <SelectItem key={admin.id} value={admin.id}>
-                            {admin.first_name} {admin.last_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Select a league administrator. If none is selected, you will be set as the administrator.
-                    </p>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="registration-type">League Registration</Label>
-                    <Select
-                      value={newLeague.registration_type}
-                      onValueChange={(value: Database["public"]["Enums"]["league_registration_type"]) =>
-                        setNewLeague({
-                          ...newLeague,
-                          registration_type: value,
-                        })
-                      }
-                    >
-                      <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Select registration type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="invite_only">By Invitation Only</SelectItem>
-                        <SelectItem value="approval_required">Approval Required</SelectItem>
-                        <SelectItem value="open">Open Registration</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {newLeague.registration_type === "invite_only"
-                      ? "Teams need to be invited to join this league"
-                      : newLeague.registration_type === "approval_required"
-                      ? "Teams can apply to join but need approval"
-                      : "Any team can join this league without approval"}
-                  </p>
-                </div>
-
-                <div className="sticky bottom-0 bg-background pt-4">
-                  <Button type="submit" className="w-full">
-                    Create League
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        )}
+        <button onClick={handleIconClick} className="focus:outline-none">
+          <Search className="h-5 w-5 text-muted-foreground" />
+        </button>
       </div>
 
-      <div className="flex items-center space-x-2 mb-4">
-        <Search className="h-5 w-5 text-muted-foreground" />
-        <Input
-          type="text"
-          placeholder="Search leagues..."
-          value={searchTerm}
-          onChange={(e) => handleSearchChange(e)}
-          className="w-full"
-          id="search-leagues"
-          name="search-leagues"
-        />
+      <div
+        className={`transition-all duration-300 ease-in-out ${
+          isSearchVisible ? "max-h-20" : "max-h-0 overflow-hidden"
+        }`}
+      >
+        <div className="flex justify-center mb-4">
+          <div className="w-1/2 md:w-1/3">
+            <Input
+              ref={inputRef}
+              type="text"
+              placeholder="Search leagues..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              onBlur={() => setIsSearchVisible(false)} // Hide input on blur
+              className="w-full"
+              id="search-leagues"
+              name="search-leagues"
+            />
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {filteredLeagues.map((league) => (
-          <Card key={league.id}>
+          <Card key={league.id} className="cursor-pointer" onClick={() => handleNavigation(league.id)}>
             <CardHeader>
               <CardTitle>{league.name}</CardTitle>
               <CardDescription>{league.description}</CardDescription>
@@ -1198,7 +901,7 @@ export default function LeaguesPage() {
                       : "Not Assigned"}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
                   {userRole === "superuser" && (
                     <Button variant="outline" className="w-full" onClick={() => handleAdminDialogOpen(league.id)}>
                       Change Admin
@@ -1209,19 +912,15 @@ export default function LeaguesPage() {
                       Change Secretary
                     </Button>
                   )}
-                  <Button variant="outline" className="w-full">
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </Button>
-                  <Button variant="outline" className="w-full">
+                  <Button variant="outline" className="w-full" onClick={() => handleNavigation(league.id, "teams")}>
                     <Users className="mr-2 h-4 w-4" />
                     Teams
                   </Button>
-                  <Button variant="outline" className="w-full">
+                  <Button variant="outline" className="w-full" onClick={() => handleNavigation(league.id, "schedule")}>
                     <Calendar className="mr-2 h-4 w-4" />
                     Schedule
                   </Button>
-                  <Button variant="outline" className="w-full">
+                  <Button variant="outline" className="w-full" onClick={() => handleNavigation(league.id, "standings")}>
                     <Trophy className="mr-2 h-4 w-4" />
                     Standings
                   </Button>
