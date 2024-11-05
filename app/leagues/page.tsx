@@ -25,6 +25,7 @@ import type { League } from "./types";
 import { AdminDialog } from "./components/admin-dialog";
 import { SecretaryDialog } from "./components/secretary-dialog";
 import type { AvailableAdmin } from "./types";
+import { CreateLeagueDialog, type CreateLeagueData } from "./components/create-league-dialog";
 
 export default function LeaguesPage() {
   const { user } = useAuth();
@@ -223,6 +224,100 @@ export default function LeaguesPage() {
     }
   };
 
+  const canCreateLeague = () => {
+    return userRole === "superuser" || userRole === "league_admin";
+  };
+
+  const [createDialog, setCreateDialog] = useState({
+    isOpen: false,
+    isLoading: false,
+  });
+
+  const handleCreateLeague = async (data: CreateLeagueData) => {
+    setCreateDialog((prev) => ({ ...prev, isLoading: true }));
+    try {
+      // Insert the new league
+      const { data: leagueData, error: leagueError } = await supabase
+        .from("leagues")
+        .insert({
+          name: data.name,
+          description: data.description,
+          format: data.format,
+          rules: data.rules,
+          team_count: data.team_count,
+          open_registration: !data.requires_approval,
+          season_start: data.season_start,
+          season_end: data.season_end,
+          created_by: user?.id || "",
+          schedule: {
+            type: "multiple_days",
+            days: data.schedule_days.map((day) => ({
+              day: day.day,
+              start_time: day.start_time,
+              end_time: day.end_time,
+            })),
+          },
+          estimated_weeks: 12,
+        })
+        .select()
+        .single();
+
+      if (leagueError) throw leagueError;
+
+      // Add league_admin permission
+      const adminId = data.admin_id || user?.id;
+      if (adminId) {
+        const { error: permissionError } = await supabase.from("league_permissions").insert({
+          league_id: leagueData.id,
+          user_id: adminId,
+          permission_type: "league_admin",
+        });
+
+        if (permissionError) throw permissionError;
+      }
+
+      // Refresh leagues list
+      await loadInitialData();
+
+      toast({
+        title: "Success",
+        description: "League created successfully",
+      });
+      setCreateDialog((prev) => ({ ...prev, isOpen: false }));
+    } catch (error) {
+      console.error("Error creating league:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to create league",
+      });
+    } finally {
+      setCreateDialog((prev) => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleCreateClick = async () => {
+    if (userRole === "superuser") {
+      // Load available admins for superuser
+      try {
+        const { data, error } = await supabase.from("users").select("id, first_name, last_name").order("first_name");
+
+        if (error) throw error;
+        setCreateDialog((prev) => ({ ...prev, isOpen: true }));
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load available administrators",
+        });
+      }
+    } else {
+      // Just open the dialog for league_admin
+      setCreateDialog((prev) => ({ ...prev, isOpen: true }));
+    }
+  };
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -233,9 +328,17 @@ export default function LeaguesPage() {
         <div className="flex-grow text-center">
           <h3 className="text-lg font-medium">Pool Leagues</h3>
         </div>
-        <button onClick={handleIconClick} className="focus:outline-none">
-          <Search className="h-5 w-5 text-muted-foreground" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleIconClick} className="focus:outline-none pr-10">
+            <Search className="h-5 w-5 text-muted-foreground" />
+          </button>
+          {canCreateLeague() && (
+            <Button size="sm" onClick={handleCreateClick}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create New League
+            </Button>
+          )}
+        </div>
       </div>
 
       <div
@@ -290,6 +393,14 @@ export default function LeaguesPage() {
         onSave={handleSaveSecretary}
         availableUsers={secretaryDialog.users}
         isLoading={secretaryDialog.isLoading}
+      />
+
+      <CreateLeagueDialog
+        isOpen={createDialog.isOpen}
+        onOpenChange={(open) => setCreateDialog((prev) => ({ ...prev, isOpen: open }))}
+        onSave={handleCreateLeague}
+        isSuperuser={userRole === "superuser"}
+        isLoading={createDialog.isLoading}
       />
     </div>
   );
