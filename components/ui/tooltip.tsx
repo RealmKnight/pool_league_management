@@ -1,32 +1,80 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import * as TooltipPrimitive from "@radix-ui/react-tooltip"
+import * as React from "react";
+import { cn } from "@/lib/utils";
 
-import { cn } from "@/lib/utils"
+interface TooltipProps {
+  content: React.ReactNode;
+  children: React.ReactNode;
+  side?: "top" | "right" | "bottom" | "left";
+  align?: "start" | "center" | "end";
+}
 
-const TooltipProvider = TooltipPrimitive.Provider
+export function Tooltip({ content, children, side = "top", align = "center" }: TooltipProps) {
+  const [show, setShow] = React.useState(false);
+  const [position, setPosition] = React.useState({ x: 0, y: 0 });
+  const tooltipRef = React.useRef<HTMLDivElement>(null);
 
-const Tooltip = TooltipPrimitive.Root
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    let x = rect.left;
+    let y = rect.top;
 
-const TooltipTrigger = TooltipPrimitive.Trigger
+    switch (side) {
+      case "top":
+        y -= 8;
+        break;
+      case "bottom":
+        y += rect.height + 8;
+        break;
+      case "left":
+        x -= 8;
+        break;
+      case "right":
+        x += rect.width + 8;
+        break;
+    }
 
-const TooltipContent = React.forwardRef<
-  React.ElementRef<typeof TooltipPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
-  <TooltipPrimitive.Portal>
-    <TooltipPrimitive.Content
-      ref={ref}
-      sideOffset={sideOffset}
-      className={cn(
-        "z-50 overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
-        className
+    switch (align) {
+      case "start":
+        if (side === "top" || side === "bottom") x = rect.left;
+        else y = rect.top;
+        break;
+      case "end":
+        if (side === "top" || side === "bottom") x = rect.right;
+        else y = rect.bottom;
+        break;
+      case "center":
+        if (side === "top" || side === "bottom") x = rect.left + rect.width / 2;
+        else y = rect.top + rect.height / 2;
+        break;
+    }
+
+    setPosition({ x, y });
+    setShow(true);
+  };
+
+  return (
+    <div className="relative inline-block" onMouseEnter={handleMouseEnter} onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && (
+        <div
+          ref={tooltipRef}
+          className={cn(
+            "absolute z-50 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95",
+            side === "top" && "bottom-full mb-2",
+            side === "bottom" && "top-full mt-2",
+            side === "left" && "right-full mr-2",
+            side === "right" && "left-full ml-2"
+          )}
+          style={{
+            left: position.x,
+            top: position.y,
+          }}
+        >
+          {content}
+        </div>
       )}
-      {...props}
-    />
-  </TooltipPrimitive.Portal>
-))
-TooltipContent.displayName = TooltipPrimitive.Content.displayName
-
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+    </div>
+  );
+}
