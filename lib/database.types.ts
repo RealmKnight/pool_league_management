@@ -96,7 +96,8 @@ export interface Database {
           created_by: string;
           created_at: string | null;
           updated_at: string | null;
-          format: string;
+          game_format: string;
+          league_format: string;
           schedule: Json;
           estimated_weeks: number;
           team_count: number;
@@ -120,7 +121,8 @@ export interface Database {
           created_by: string;
           created_at?: string | null;
           updated_at?: string | null;
-          format?: string;
+          game_format: string;
+          league_format: string;
           schedule?: Json;
           estimated_weeks?: number;
           team_count?: number;
@@ -136,7 +138,8 @@ export interface Database {
           created_by?: string;
           created_at?: string | null;
           updated_at?: string | null;
-          format?: string;
+          game_format?: string;
+          league_format?: string;
           schedule?: Json;
           estimated_weeks?: number;
           team_count?: number;
@@ -495,6 +498,8 @@ export interface Database {
     Enums: {
       user_role: "superuser" | "league_admin" | "league_secretary" | "team_captain" | "team_secretary" | "player";
       league_registration_type: "invite_only" | "approval_required" | "open";
+      game_format: "8-Ball" | "9-Ball" | "10-Ball" | "Straight Pool" | "One Pocket" | "Bank Pool";
+      league_format: "Round Robin" | "Single Elimination" | "Double Elimination" | "Swiss" | "Swiss with Knockouts";
     };
     CompositeTypes: {
       [_ in never]: never;
