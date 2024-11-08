@@ -57,6 +57,11 @@ export function LeagueCard({
           </div>
 
           <div className="flex justify-between text-sm">
+            <span>Game Format: </span>
+            <span>{league.game_format ? league.game_format : "No format set"}</span>
+          </div>
+
+          <div className="flex justify-between text-sm">
             <span>Administrator: </span>
             <span>{getFormattedName("league_admin")}</span>
           </div>

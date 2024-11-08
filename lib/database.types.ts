@@ -1,6 +1,56 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-export interface Database {
+export type Database = {
+  graphql_public: {
+    Tables: {
+      [_ in never]: never;
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      graphql: {
+        Args: {
+          operationName?: string;
+          query?: string;
+          variables?: Json;
+          extensions?: Json;
+        };
+        Returns: Json;
+      };
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
+    };
+  };
+  pgbouncer: {
+    Tables: {
+      [_ in never]: never;
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      get_auth: {
+        Args: {
+          p_usename: string;
+        };
+        Returns: {
+          username: string;
+          password: string;
+        }[];
+      };
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
+    };
+  };
   public: {
     Tables: {
       games: {
@@ -113,8 +163,9 @@ export interface Database {
           created_by: string;
           description: string | null;
           estimated_weeks: number;
-          format: string;
+          game_format: string;
           id: string;
+          league_format: string;
           name: string;
           open_registration: boolean;
           rules: Json | null;
@@ -129,8 +180,9 @@ export interface Database {
           created_by: string;
           description?: string | null;
           estimated_weeks?: number;
-          format?: string;
+          game_format?: string;
           id?: string;
+          league_format?: string;
           name: string;
           open_registration?: boolean;
           rules?: Json | null;
@@ -145,8 +197,9 @@ export interface Database {
           created_by?: string;
           description?: string | null;
           estimated_weeks?: number;
-          format?: string;
+          game_format?: string;
           id?: string;
+          league_format?: string;
           name?: string;
           open_registration?: boolean;
           rules?: Json | null;
@@ -168,33 +221,45 @@ export interface Database {
       matches: {
         Row: {
           away_team_id: string | null;
+          away_team_score: number | null;
           created_at: string | null;
           home_team_id: string | null;
+          home_team_score: number | null;
           id: string;
           league_id: string | null;
           match_date: string;
+          season_id: string;
           status: string | null;
           updated_at: string | null;
+          venue: string | null;
         };
         Insert: {
           away_team_id?: string | null;
+          away_team_score?: number | null;
           created_at?: string | null;
           home_team_id?: string | null;
+          home_team_score?: number | null;
           id?: string;
           league_id?: string | null;
           match_date: string;
+          season_id: string;
           status?: string | null;
           updated_at?: string | null;
+          venue?: string | null;
         };
         Update: {
           away_team_id?: string | null;
+          away_team_score?: number | null;
           created_at?: string | null;
           home_team_id?: string | null;
+          home_team_score?: number | null;
           id?: string;
           league_id?: string | null;
           match_date?: string;
+          season_id?: string;
           status?: string | null;
           updated_at?: string | null;
+          venue?: string | null;
         };
         Relationships: [
           {
@@ -213,6 +278,183 @@ export interface Database {
             foreignKeyName: "matches_league_id_fkey";
             columns: ["league_id"];
             referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "matches_season_id_fkey";
+            columns: ["season_id"];
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      player_statistics: {
+        Row: {
+          assists: number | null;
+          goals: number | null;
+          id: string;
+          league_id: string;
+          matches_played: number | null;
+          minutes_played: number | null;
+          player_id: string;
+          red_cards: number | null;
+          season_id: string;
+          team_id: string;
+          updated_at: string | null;
+          yellow_cards: number | null;
+        };
+        Insert: {
+          assists?: number | null;
+          goals?: number | null;
+          id?: string;
+          league_id: string;
+          matches_played?: number | null;
+          minutes_played?: number | null;
+          player_id: string;
+          red_cards?: number | null;
+          season_id: string;
+          team_id: string;
+          updated_at?: string | null;
+          yellow_cards?: number | null;
+        };
+        Update: {
+          assists?: number | null;
+          goals?: number | null;
+          id?: string;
+          league_id?: string;
+          matches_played?: number | null;
+          minutes_played?: number | null;
+          player_id?: string;
+          red_cards?: number | null;
+          season_id?: string;
+          team_id?: string;
+          updated_at?: string | null;
+          yellow_cards?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "player_statistics_league_id_fkey";
+            columns: ["league_id"];
+            referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "player_statistics_player_id_fkey";
+            columns: ["player_id"];
+            referencedRelation: "team_players";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "player_statistics_season_id_fkey";
+            columns: ["season_id"];
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "player_statistics_team_id_fkey";
+            columns: ["team_id"];
+            referencedRelation: "teams";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      seasons: {
+        Row: {
+          created_at: string | null;
+          created_by: string | null;
+          end_date: string | null;
+          id: string;
+          league_id: string;
+          name: string;
+          start_date: string | null;
+          status: string | null;
+        };
+        Insert: {
+          created_at?: string | null;
+          created_by?: string | null;
+          end_date?: string | null;
+          id?: string;
+          league_id: string;
+          name: string;
+          start_date?: string | null;
+          status?: string | null;
+        };
+        Update: {
+          created_at?: string | null;
+          created_by?: string | null;
+          end_date?: string | null;
+          id?: string;
+          league_id?: string;
+          name?: string;
+          start_date?: string | null;
+          status?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "seasons_created_by_fkey";
+            columns: ["created_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "seasons_league_id_fkey";
+            columns: ["league_id"];
+            referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      team_invites: {
+        Row: {
+          created_at: string | null;
+          email: string;
+          expires_at: string | null;
+          id: string;
+          invited_by: string;
+          league_id: string;
+          role: string;
+          status: string | null;
+          team_id: string;
+        };
+        Insert: {
+          created_at?: string | null;
+          email: string;
+          expires_at?: string | null;
+          id?: string;
+          invited_by: string;
+          league_id: string;
+          role: string;
+          status?: string | null;
+          team_id: string;
+        };
+        Update: {
+          created_at?: string | null;
+          email?: string;
+          expires_at?: string | null;
+          id?: string;
+          invited_by?: string;
+          league_id?: string;
+          role?: string;
+          status?: string | null;
+          team_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "team_invites_invited_by_fkey";
+            columns: ["invited_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_invites_league_id_fkey";
+            columns: ["league_id"];
+            referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_invites_team_id_fkey";
+            columns: ["team_id"];
+            referencedRelation: "teams";
             referencedColumns: ["id"];
           }
         ];
@@ -261,21 +503,39 @@ export interface Database {
         Row: {
           created_at: string | null;
           id: string;
+          jersey_number: string | null;
+          join_date: string | null;
           league_id: string | null;
+          leave_date: string | null;
+          position: string | null;
+          role: string | null;
+          status: string | null;
           team_id: string | null;
           user_id: string | null;
         };
         Insert: {
           created_at?: string | null;
           id?: string;
+          jersey_number?: string | null;
+          join_date?: string | null;
           league_id?: string | null;
+          leave_date?: string | null;
+          position?: string | null;
+          role?: string | null;
+          status?: string | null;
           team_id?: string | null;
           user_id?: string | null;
         };
         Update: {
           created_at?: string | null;
           id?: string;
+          jersey_number?: string | null;
+          join_date?: string | null;
           league_id?: string | null;
+          leave_date?: string | null;
+          position?: string | null;
+          role?: string | null;
+          status?: string | null;
           team_id?: string | null;
           user_id?: string | null;
         };
@@ -300,32 +560,166 @@ export interface Database {
           }
         ];
       };
+      team_staff: {
+        Row: {
+          created_at: string | null;
+          end_date: string | null;
+          id: string;
+          league_id: string;
+          role: string | null;
+          start_date: string | null;
+          status: string | null;
+          team_id: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string | null;
+          end_date?: string | null;
+          id?: string;
+          league_id: string;
+          role?: string | null;
+          start_date?: string | null;
+          status?: string | null;
+          team_id: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string | null;
+          end_date?: string | null;
+          id?: string;
+          league_id?: string;
+          role?: string | null;
+          start_date?: string | null;
+          status?: string | null;
+          team_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "team_staff_league_id_fkey";
+            columns: ["league_id"];
+            referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_staff_team_id_fkey";
+            columns: ["team_id"];
+            referencedRelation: "teams";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_staff_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      team_statistics: {
+        Row: {
+          draws: number | null;
+          goals_against: number | null;
+          goals_for: number | null;
+          id: string;
+          league_id: string;
+          losses: number | null;
+          matches_played: number | null;
+          points: number | null;
+          season_id: string;
+          team_id: string;
+          updated_at: string | null;
+          wins: number | null;
+        };
+        Insert: {
+          draws?: number | null;
+          goals_against?: number | null;
+          goals_for?: number | null;
+          id?: string;
+          league_id: string;
+          losses?: number | null;
+          matches_played?: number | null;
+          points?: number | null;
+          season_id: string;
+          team_id: string;
+          updated_at?: string | null;
+          wins?: number | null;
+        };
+        Update: {
+          draws?: number | null;
+          goals_against?: number | null;
+          goals_for?: number | null;
+          id?: string;
+          league_id?: string;
+          losses?: number | null;
+          matches_played?: number | null;
+          points?: number | null;
+          season_id?: string;
+          team_id?: string;
+          updated_at?: string | null;
+          wins?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "team_statistics_league_id_fkey";
+            columns: ["league_id"];
+            referencedRelation: "leagues";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_statistics_season_id_fkey";
+            columns: ["season_id"];
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_statistics_team_id_fkey";
+            columns: ["team_id"];
+            referencedRelation: "teams";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       teams: {
         Row: {
           created_at: string | null;
           created_by: string;
           format: string;
+          home_venue: string | null;
           id: string;
           league_id: string | null;
+          logo_url: string | null;
+          max_players: number | null;
           name: string;
+          status: Database["public"]["Enums"]["team_status_enum"] | null;
+          team_contact: string | null;
           updated_at: string | null;
         };
         Insert: {
           created_at?: string | null;
           created_by: string;
           format: string;
+          home_venue?: string | null;
           id?: string;
           league_id?: string | null;
+          logo_url?: string | null;
+          max_players?: number | null;
           name: string;
+          status?: Database["public"]["Enums"]["team_status_enum"] | null;
+          team_contact?: string | null;
           updated_at?: string | null;
         };
         Update: {
           created_at?: string | null;
           created_by?: string;
           format?: string;
+          home_venue?: string | null;
           id?: string;
           league_id?: string | null;
+          logo_url?: string | null;
+          max_players?: number | null;
           name?: string;
+          status?: Database["public"]["Enums"]["team_status_enum"] | null;
+          team_contact?: string | null;
           updated_at?: string | null;
         };
         Relationships: [
@@ -413,6 +807,43 @@ export interface Database {
           }
         ];
       };
+      team_permissions: {
+        Row: {
+          id: string;
+          team_id: string;
+          user_id: string;
+          permission_type: string;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          team_id: string;
+          user_id: string;
+          permission_type: string;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          team_id?: string;
+          user_id?: string;
+          permission_type?: string;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "team_permissions_team_id_fkey";
+            columns: ["team_id"];
+            referencedRelation: "teams";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_permissions_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -460,6 +891,14 @@ export interface Database {
         };
         Returns: boolean;
       };
+      manage_league_permission: {
+        Args: {
+          p_league_id: string;
+          p_user_id: string;
+          p_permission_type: string;
+        };
+        Returns: undefined;
+      };
       manage_league_secretary: {
         Args: {
           p_league_id: string;
@@ -467,20 +906,346 @@ export interface Database {
         };
         Returns: undefined;
       };
+      manage_team_secretary: {
+        Args: {
+          p_team_id: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
+      game_format_enum: "8-Ball" | "9-Ball" | "10-Ball" | "Straight Pool" | "One Pocket" | "Bank Pool";
+      league_format_enum:
+        | "Round Robin"
+        | "Single Elimination"
+        | "Double Elimination"
+        | "Swiss"
+        | "Swiss with Knockouts";
       user_role: "superuser" | "league_admin" | "league_secretary" | "team_captain" | "team_secretary" | "player";
+      team_status_enum: "active" | "inactive" | "pending";
     };
     CompositeTypes: {
       [_ in never]: never;
     };
   };
-}
+  storage: {
+    Tables: {
+      buckets: {
+        Row: {
+          allowed_mime_types: string[] | null;
+          avif_autodetection: boolean | null;
+          created_at: string | null;
+          file_size_limit: number | null;
+          id: string;
+          name: string;
+          owner: string | null;
+          owner_id: string | null;
+          public: boolean | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          allowed_mime_types?: string[] | null;
+          avif_autodetection?: boolean | null;
+          created_at?: string | null;
+          file_size_limit?: number | null;
+          id: string;
+          name: string;
+          owner?: string | null;
+          owner_id?: string | null;
+          public?: boolean | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          allowed_mime_types?: string[] | null;
+          avif_autodetection?: boolean | null;
+          created_at?: string | null;
+          file_size_limit?: number | null;
+          id?: string;
+          name?: string;
+          owner?: string | null;
+          owner_id?: string | null;
+          public?: boolean | null;
+          updated_at?: string | null;
+        };
+        Relationships: [];
+      };
+      migrations: {
+        Row: {
+          executed_at: string | null;
+          hash: string;
+          id: number;
+          name: string;
+        };
+        Insert: {
+          executed_at?: string | null;
+          hash: string;
+          id: number;
+          name: string;
+        };
+        Update: {
+          executed_at?: string | null;
+          hash?: string;
+          id?: number;
+          name?: string;
+        };
+        Relationships: [];
+      };
+      objects: {
+        Row: {
+          bucket_id: string | null;
+          created_at: string | null;
+          id: string;
+          last_accessed_at: string | null;
+          metadata: Json | null;
+          name: string | null;
+          owner: string | null;
+          owner_id: string | null;
+          path_tokens: string[] | null;
+          updated_at: string | null;
+          user_metadata: Json | null;
+          version: string | null;
+        };
+        Insert: {
+          bucket_id?: string | null;
+          created_at?: string | null;
+          id?: string;
+          last_accessed_at?: string | null;
+          metadata?: Json | null;
+          name?: string | null;
+          owner?: string | null;
+          owner_id?: string | null;
+          path_tokens?: string[] | null;
+          updated_at?: string | null;
+          user_metadata?: Json | null;
+          version?: string | null;
+        };
+        Update: {
+          bucket_id?: string | null;
+          created_at?: string | null;
+          id?: string;
+          last_accessed_at?: string | null;
+          metadata?: Json | null;
+          name?: string | null;
+          owner?: string | null;
+          owner_id?: string | null;
+          path_tokens?: string[] | null;
+          updated_at?: string | null;
+          user_metadata?: Json | null;
+          version?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "objects_bucketId_fkey";
+            columns: ["bucket_id"];
+            referencedRelation: "buckets";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      s3_multipart_uploads: {
+        Row: {
+          bucket_id: string;
+          created_at: string;
+          id: string;
+          in_progress_size: number;
+          key: string;
+          owner_id: string | null;
+          upload_signature: string;
+          user_metadata: Json | null;
+          version: string;
+        };
+        Insert: {
+          bucket_id: string;
+          created_at?: string;
+          id: string;
+          in_progress_size?: number;
+          key: string;
+          owner_id?: string | null;
+          upload_signature: string;
+          user_metadata?: Json | null;
+          version: string;
+        };
+        Update: {
+          bucket_id?: string;
+          created_at?: string;
+          id?: string;
+          in_progress_size?: number;
+          key?: string;
+          owner_id?: string | null;
+          upload_signature?: string;
+          user_metadata?: Json | null;
+          version?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "s3_multipart_uploads_bucket_id_fkey";
+            columns: ["bucket_id"];
+            referencedRelation: "buckets";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      s3_multipart_uploads_parts: {
+        Row: {
+          bucket_id: string;
+          created_at: string;
+          etag: string;
+          id: string;
+          key: string;
+          owner_id: string | null;
+          part_number: number;
+          size: number;
+          upload_id: string;
+          version: string;
+        };
+        Insert: {
+          bucket_id: string;
+          created_at?: string;
+          etag: string;
+          id?: string;
+          key: string;
+          owner_id?: string | null;
+          part_number: number;
+          size?: number;
+          upload_id: string;
+          version: string;
+        };
+        Update: {
+          bucket_id?: string;
+          created_at?: string;
+          etag?: string;
+          id?: string;
+          key?: string;
+          owner_id?: string | null;
+          part_number?: number;
+          size?: number;
+          upload_id?: string;
+          version?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "s3_multipart_uploads_parts_bucket_id_fkey";
+            columns: ["bucket_id"];
+            referencedRelation: "buckets";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "s3_multipart_uploads_parts_upload_id_fkey";
+            columns: ["upload_id"];
+            referencedRelation: "s3_multipart_uploads";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      can_insert_object: {
+        Args: {
+          bucketid: string;
+          name: string;
+          owner: string;
+          metadata: Json;
+        };
+        Returns: undefined;
+      };
+      extension: {
+        Args: {
+          name: string;
+        };
+        Returns: string;
+      };
+      filename: {
+        Args: {
+          name: string;
+        };
+        Returns: string;
+      };
+      foldername: {
+        Args: {
+          name: string;
+        };
+        Returns: string[];
+      };
+      get_size_by_bucket: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          size: number;
+          bucket_id: string;
+        }[];
+      };
+      list_multipart_uploads_with_delimiter: {
+        Args: {
+          bucket_id: string;
+          prefix_param: string;
+          delimiter_param: string;
+          max_keys?: number;
+          next_key_token?: string;
+          next_upload_token?: string;
+        };
+        Returns: {
+          key: string;
+          id: string;
+          created_at: string;
+        }[];
+      };
+      list_objects_with_delimiter: {
+        Args: {
+          bucket_id: string;
+          prefix_param: string;
+          delimiter_param: string;
+          max_keys?: number;
+          start_after?: string;
+          next_token?: string;
+        };
+        Returns: {
+          name: string;
+          id: string;
+          metadata: Json;
+          updated_at: string;
+        }[];
+      };
+      operation: {
+        Args: Record<PropertyKey, never>;
+        Returns: string;
+      };
+      search: {
+        Args: {
+          prefix: string;
+          bucketname: string;
+          limits?: number;
+          levels?: number;
+          offsets?: number;
+          search?: string;
+          sortcolumn?: string;
+          sortorder?: string;
+        };
+        Returns: {
+          name: string;
+          id: string;
+          updated_at: string;
+          created_at: string;
+          last_accessed_at: string;
+          metadata: Json;
+        }[];
+      };
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
+    };
+  };
+};
+
+type PublicSchema = Database[Extract<keyof Database, "public">];
 
 export type Tables<
-  PublicTableNameOrOptions extends
-    | keyof (Database["public"]["Tables"] & Database["public"]["Views"])
-    | { schema: keyof Database },
+  PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] & PublicSchema["Views"]) | { schema: keyof Database },
   TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
     ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
         Database[PublicTableNameOrOptions["schema"]]["Views"])
@@ -492,8 +1257,8 @@ export type Tables<
     }
     ? R
     : never
-  : PublicTableNameOrOptions extends keyof (Database["public"]["Tables"] & Database["public"]["Views"])
-  ? (Database["public"]["Tables"] & Database["public"]["Views"])[PublicTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] & PublicSchema["Views"])
+  ? (PublicSchema["Tables"] & PublicSchema["Views"])[PublicTableNameOrOptions] extends {
       Row: infer R;
     }
     ? R
@@ -501,7 +1266,7 @@ export type Tables<
   : never;
 
 export type TablesInsert<
-  PublicTableNameOrOptions extends keyof Database["public"]["Tables"] | { schema: keyof Database },
+  PublicTableNameOrOptions extends keyof PublicSchema["Tables"] | { schema: keyof Database },
   TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
     ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never
@@ -511,8 +1276,8 @@ export type TablesInsert<
     }
     ? I
     : never
-  : PublicTableNameOrOptions extends keyof Database["public"]["Tables"]
-  ? Database["public"]["Tables"][PublicTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+  ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
       Insert: infer I;
     }
     ? I
@@ -520,7 +1285,7 @@ export type TablesInsert<
   : never;
 
 export type TablesUpdate<
-  PublicTableNameOrOptions extends keyof Database["public"]["Tables"] | { schema: keyof Database },
+  PublicTableNameOrOptions extends keyof PublicSchema["Tables"] | { schema: keyof Database },
   TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
     ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never
@@ -530,8 +1295,8 @@ export type TablesUpdate<
     }
     ? U
     : never
-  : PublicTableNameOrOptions extends keyof Database["public"]["Tables"]
-  ? Database["public"]["Tables"][PublicTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+  ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
       Update: infer U;
     }
     ? U
@@ -539,12 +1304,12 @@ export type TablesUpdate<
   : never;
 
 export type Enums<
-  PublicEnumNameOrOptions extends keyof Database["public"]["Enums"] | { schema: keyof Database },
+  PublicEnumNameOrOptions extends keyof PublicSchema["Enums"] | { schema: keyof Database },
   EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
     ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
     : never = never
 > = PublicEnumNameOrOptions extends { schema: keyof Database }
   ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : PublicEnumNameOrOptions extends keyof Database["public"]["Enums"]
-  ? Database["public"]["Enums"][PublicEnumNameOrOptions]
+  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
+  ? PublicSchema["Enums"][PublicEnumNameOrOptions]
   : never;

@@ -248,59 +248,69 @@ export default function LeaguesPage() {
   const [createDialog, setCreateDialog] = useState({
     isOpen: false,
     isLoading: false,
+    availableAdmins: [] as AvailableAdmin[],
   });
 
   const handleCreateLeague = async (data: CreateLeagueFormData) => {
     setCreateDialog((prev) => ({ ...prev, isLoading: true }));
     try {
-      if (!user?.id) throw new Error("User not authenticated");
+      console.log("Creating league with data:", data); // Debug log
 
-      // Transform the data to match the database schema exactly
+      // Validate user is logged in
+      if (!user?.id) {
+        throw new Error("User must be logged in to create a league");
+      }
+
+      // Prepare the league data according to the database schema
       const leagueData: Database["public"]["Tables"]["leagues"]["Insert"] = {
         name: data.name,
         description: data.description || null,
-        format: data.format,
-        rules: {
-          allowed: data.rules.allowed,
-        },
+        game_format: data.game_format,
+        league_format: data.league_format,
+        rules: null,
         team_count: data.team_count,
         open_registration: !data.requires_approval,
-        season_start: data.season_start,
-        season_end: data.season_end,
+        season_start: data.season_start ? data.season_start.toISOString() : null,
+        season_end: data.season_end ? data.season_end.toISOString() : null,
         created_by: user.id,
-        estimated_weeks: data.estimated_weeks || 12,
-        schedule: data.schedule,
+        schedule: {
+          type: "multiple_days",
+          days: data.schedule_days.map((day) => ({
+            day: day.day,
+            start_time: day.start_time,
+            end_time: day.end_time,
+          })),
+        },
+        estimated_weeks: 12,
       };
 
-      console.log("Creating league with data:", leagueData);
+      console.log("Prepared league data:", leagueData); // Debug log
 
-      // Create the league with explicit schema reference
-      const { data: newLeague, error: leagueError } = await supabase
+      // Create the league
+      const { data: createdLeague, error: leagueError } = await supabase
         .from("leagues")
         .insert(leagueData)
-        .select(
-          `
-          *,
-          league_permissions (
-            id,
-            user_id,
-            permission_type,
-            created_at,
-            users (
-              first_name,
-              last_name
-            )
-          )
-        `
-        )
+        .select("*")
         .single();
 
       if (leagueError) {
-        console.error("League creation error:", leagueError);
-        throw leagueError;
+        console.error("League creation error details:", {
+          code: leagueError.code,
+          message: leagueError.message,
+          details: leagueError.details,
+          hint: leagueError.hint,
+        });
+        throw new Error(`Failed to create league: ${leagueError.message}`);
       }
 
-      console.log("League created:", newLeague);
+      if (!createdLeague) {
+        throw new Error("No league data returned after creation");
+      }
+
+      console.log("League created successfully:", createdLeague); // Debug log
+
+      // Refresh leagues list
+      await loadInitialData();
 
       // Create the league permission
       const adminId = data.admin_id || user.id;
@@ -334,24 +344,56 @@ export default function LeaguesPage() {
       await loadInitialData();
       toast({
         title: "Success",
-        description: "League created successfully",
+        description: "League created successfully. Please assign an administrator.",
       });
       setCreateDialog((prev) => ({ ...prev, isOpen: false }));
+
+      // Automatically open the admin dialog for the new league
+      handleAdminChange(createdLeague.id);
     } catch (error: any) {
-      console.error("Error creating league:", error);
+      console.error("Error creating league - Full error:", {
+        error,
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        stack: error?.stack,
+      });
+
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message || "Failed to create league",
+        description: error?.message || "Failed to create league. Please check the console for details.",
       });
     } finally {
       setCreateDialog((prev) => ({ ...prev, isLoading: false }));
     }
   };
 
-  const handleCreateClick = () => {
-    // Just open the dialog - admin loading is now handled in the dialog component
-    setCreateDialog((prev) => ({ ...prev, isOpen: true }));
+  const handleCreateClick = async () => {
+    if (userRole === "superuser") {
+      // Load available admins for superuser
+      try {
+        const { data, error } = await supabase.from("users").select("id, first_name, last_name").order("first_name");
+
+        if (error) throw error;
+
+        setCreateDialog((prev) => ({
+          ...prev,
+          isOpen: true,
+          availableAdmins: data as AvailableAdmin[],
+        }));
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load available administrators",
+        });
+      }
+    } else {
+      // Just open the dialog for league_admin
+      setCreateDialog((prev) => ({ ...prev, isOpen: true }));
+    }
   };
 
   if (loading) {
@@ -436,6 +478,7 @@ export default function LeaguesPage() {
         onOpenChange={(open) => setCreateDialog((prev) => ({ ...prev, isOpen: open }))}
         onSave={handleCreateLeague}
         isSuperuser={userRole === "superuser"}
+        availableAdmins={createDialog.availableAdmins}
         isLoading={createDialog.isLoading}
       />
     </div>
