@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { AvailableCaptain } from "../types";
-import { Database } from "@/lib/db/schema";
+import { Database } from "@/lib/database.types";
 
 interface CreateTeamDialogProps {
   isOpen: boolean;

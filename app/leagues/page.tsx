@@ -22,7 +22,8 @@ type LeagueInsert = Database["public"]["Tables"]["leagues"]["Insert"];
 interface CreateLeagueFormData {
   name: string;
   description: string;
-  format: LeagueFormat;
+  game_format: GameFormat;
+  league_format: LeagueFormat;
   rules: {
     allowed: LeagueRules[];
   };
@@ -476,10 +477,10 @@ export default function LeaguesPage() {
       <CreateLeagueDialog
         isOpen={createDialog.isOpen}
         onOpenChange={(open) => setCreateDialog((prev) => ({ ...prev, isOpen: open }))}
-        onSave={handleCreateLeague}
+        onSuccess={loadInitialData}
         isSuperuser={userRole === "superuser"}
         availableAdmins={createDialog.availableAdmins}
-        isLoading={createDialog.isLoading}
+        userId={user?.id}
       />
     </div>
   );

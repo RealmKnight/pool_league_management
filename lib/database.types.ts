@@ -917,6 +917,7 @@ export type Database = {
     Enums: {
       game_format_enum: "8-Ball" | "9-Ball" | "10-Ball" | "Straight Pool" | "One Pocket" | "Bank Pool";
       league_format_enum:
+        | "Single Round Robin"
         | "Round Robin"
         | "Single Elimination"
         | "Double Elimination"
