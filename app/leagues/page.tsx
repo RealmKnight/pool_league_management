@@ -4,28 +4,45 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LeagueCard } from "./components/league-card";
 import { useLeagues } from "./hooks/use-leagues";
-import type { League } from "./types";
+import type { League, LeagueFormat, LeagueRules, WeekDay } from "./types";
 import { AdminDialog } from "./components/admin-dialog";
 import { SecretaryDialog } from "./components/secretary-dialog";
 import type { AvailableAdmin } from "./types";
-import { CreateLeagueDialog, type CreateLeagueData } from "./components/create-league-dialog";
+import { CreateLeagueDialog } from "./components/create-league-dialog";
+
+// Define the DB insert type
+type LeagueInsert = Database["public"]["Tables"]["leagues"]["Insert"];
+
+interface CreateLeagueFormData {
+  name: string;
+  description: string;
+  format: LeagueFormat;
+  rules: {
+    allowed: LeagueRules[];
+  };
+  team_count: number;
+  requires_approval: boolean;
+  open_registration: boolean;
+  created_by: string;
+  estimated_weeks: number;
+  season_start: string | null;
+  season_end: string | null;
+  schedule: {
+    type: "multiple_days";
+    days: Array<{
+      day: string;
+      start_time: string;
+      end_time: string;
+    }>;
+  };
+  admin_id?: string;
+}
 
 export default function LeaguesPage() {
   const { user } = useAuth();
@@ -233,89 +250,108 @@ export default function LeaguesPage() {
     isLoading: false,
   });
 
-  const handleCreateLeague = async (data: CreateLeagueData) => {
+  const handleCreateLeague = async (data: CreateLeagueFormData) => {
     setCreateDialog((prev) => ({ ...prev, isLoading: true }));
     try {
-      // Insert the new league
-      const { data: leagueData, error: leagueError } = await supabase
+      if (!user?.id) throw new Error("User not authenticated");
+
+      // Transform the data to match the database schema exactly
+      const leagueData: Database["public"]["Tables"]["leagues"]["Insert"] = {
+        name: data.name,
+        description: data.description || null,
+        format: data.format,
+        rules: {
+          allowed: data.rules.allowed,
+        },
+        team_count: data.team_count,
+        open_registration: !data.requires_approval,
+        season_start: data.season_start,
+        season_end: data.season_end,
+        created_by: user.id,
+        estimated_weeks: data.estimated_weeks || 12,
+        schedule: data.schedule,
+      };
+
+      console.log("Creating league with data:", leagueData);
+
+      // Create the league with explicit schema reference
+      const { data: newLeague, error: leagueError } = await supabase
         .from("leagues")
-        .insert({
-          name: data.name,
-          description: data.description,
-          format: data.format,
-          rules: data.rules,
-          team_count: data.team_count,
-          open_registration: !data.requires_approval,
-          season_start: data.season_start,
-          season_end: data.season_end,
-          created_by: user?.id || "",
-          schedule: {
-            type: "multiple_days",
-            days: data.schedule_days.map((day) => ({
-              day: day.day,
-              start_time: day.start_time,
-              end_time: day.end_time,
-            })),
-          },
-          estimated_weeks: 12,
-        })
-        .select()
+        .insert(leagueData)
+        .select(
+          `
+          *,
+          league_permissions (
+            id,
+            user_id,
+            permission_type,
+            created_at,
+            users (
+              first_name,
+              last_name
+            )
+          )
+        `
+        )
         .single();
 
-      if (leagueError) throw leagueError;
-
-      // Add league_admin permission
-      const adminId = data.admin_id || user?.id;
-      if (adminId) {
-        const { error: permissionError } = await supabase.from("league_permissions").insert({
-          league_id: leagueData.id,
-          user_id: adminId,
-          permission_type: "league_admin",
-        });
-
-        if (permissionError) throw permissionError;
+      if (leagueError) {
+        console.error("League creation error:", leagueError);
+        throw leagueError;
       }
 
-      // Refresh leagues list
-      await loadInitialData();
+      console.log("League created:", newLeague);
 
+      // Create the league permission
+      const adminId = data.admin_id || user.id;
+      const { error: permissionError } = await supabase.from("league_permissions").insert({
+        league_id: newLeague.id,
+        user_id: adminId,
+        permission_type: "league_admin",
+        created_at: new Date().toISOString(),
+      });
+
+      if (permissionError) {
+        console.error("Permission creation error:", permissionError);
+        throw permissionError;
+      }
+
+      // If superuser creating for someone else, add superuser as admin too
+      if (userRole === "superuser" && data.admin_id && data.admin_id !== user.id) {
+        const { error: superuserPermissionError } = await supabase.from("league_permissions").insert({
+          league_id: newLeague.id,
+          user_id: user.id,
+          permission_type: "league_admin",
+          created_at: new Date().toISOString(),
+        });
+
+        if (superuserPermissionError) {
+          console.error("Superuser permission error:", superuserPermissionError);
+          throw superuserPermissionError;
+        }
+      }
+
+      await loadInitialData();
       toast({
         title: "Success",
         description: "League created successfully",
       });
       setCreateDialog((prev) => ({ ...prev, isOpen: false }));
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating league:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to create league",
+        description: error.message || "Failed to create league",
       });
     } finally {
       setCreateDialog((prev) => ({ ...prev, isLoading: false }));
     }
   };
 
-  const handleCreateClick = async () => {
-    if (userRole === "superuser") {
-      // Load available admins for superuser
-      try {
-        const { data, error } = await supabase.from("users").select("id, first_name, last_name").order("first_name");
-
-        if (error) throw error;
-        setCreateDialog((prev) => ({ ...prev, isOpen: true }));
-      } catch (error) {
-        console.error("Error fetching users:", error);
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Failed to load available administrators",
-        });
-      }
-    } else {
-      // Just open the dialog for league_admin
-      setCreateDialog((prev) => ({ ...prev, isOpen: true }));
-    }
+  const handleCreateClick = () => {
+    // Just open the dialog - admin loading is now handled in the dialog component
+    setCreateDialog((prev) => ({ ...prev, isOpen: true }));
   };
 
   if (loading) {

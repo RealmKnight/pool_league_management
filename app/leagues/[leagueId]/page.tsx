@@ -24,9 +24,12 @@ export default function LeaguePage() {
   const [loading, setLoading] = useState(true);
   const supabase = createClientComponentClient<Database>();
   const activeTab = searchParams.get("tab") || "overview";
+  const leagueId = typeof params.leagueId === "string" ? params.leagueId : "";
 
   useEffect(() => {
     const fetchLeague = async () => {
+      if (!leagueId) return;
+
       try {
         const { data, error } = await supabase
           .from("leagues")
@@ -45,7 +48,7 @@ export default function LeaguePage() {
             )
           `
           )
-          .eq("id", params.leagueId)
+          .eq("id", leagueId)
           .single();
 
         if (error) throw error;
@@ -63,7 +66,7 @@ export default function LeaguePage() {
     };
 
     fetchLeague();
-  }, [params.leagueId, supabase, toast]);
+  }, [leagueId, supabase, toast]);
 
   if (loading) {
     return <LoadingState />;

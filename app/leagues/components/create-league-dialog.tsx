@@ -1,42 +1,86 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar } from "@/components/ui/calendar"; // Import the calendar component
+import { Calendar } from "@/components/ui/calendar";
 import { LoadingState } from "./loading-state";
 import { ErrorState } from "./error-state";
-import type { LeagueFormat, LeagueRules, WeekDay } from "../types";
+import type { LeagueFormat, LeagueRules, WeekDay, AvailableAdmin } from "../types";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import type { Database } from "@/lib/database.types";
+import { useToast } from "@/hooks/use-toast";
 
 interface CreateLeagueDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (data: CreateLeagueData) => Promise<void>;
+  onSave: (data: FormState) => Promise<void>;
   isSuperuser: boolean;
   isLoading: boolean;
-  availableAdmins?: { id: string; first_name: string; last_name: string }[];
 }
 
 export interface CreateLeagueData {
   name: string;
+  created_by: string;
+  estimated_weeks: number;
+  format: LeagueFormat;
+  team_count: number;
+  open_registration: boolean;
+  schedule: {
+    type: "multiple_days";
+    days: Array<{
+      day: string;
+      start_time: string;
+      end_time: string;
+    }>;
+  };
+  description?: string | null;
+  rules?: {
+    allowed: LeagueRules[];
+    // Add any other rules-related fields here
+  } | null;
+  season_start?: string | null;
+  season_end?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+// Update the FormState interface
+interface FormState {
+  name: string;
   description: string;
   format: LeagueFormat;
-  rules: LeagueRules[];
+  rules: {
+    allowed: LeagueRules[];
+  };
   team_count: number;
   requires_approval: boolean;
-  season_start: string; // Ensure this is always a string
-  season_end: string; // Ensure this is always a string
-  schedule_days: {
-    day: WeekDay;
-    start_time: string;
-    end_time: string;
-  }[];
-  open_registration: boolean; // New field for open registration
-  admin_id?: string; // Only for superuser
+  open_registration: boolean;
+  created_by: string;
+  estimated_weeks: number;
+  season_start: string | null;
+  season_end: string | null;
+  schedule: {
+    type: "multiple_days";
+    days: Array<{
+      day: string;
+      start_time: string;
+      end_time: string;
+    }>;
+  };
+  admin_id?: string;
 }
 
 const FORMATS: LeagueFormat[] = ["round_robin", "bracket", "swiss"];
@@ -51,25 +95,33 @@ const TIME_OPTIONS = Array.from({ length: 36 }, (_, i) => {
 // Utility function for conditional class names
 const cn = (...classes: string[]) => classes.filter(Boolean).join(" ");
 
-export function CreateLeagueDialog({
-  isOpen,
-  onOpenChange,
-  onSave,
-  isSuperuser,
-  isLoading,
-  availableAdmins = [],
-}: CreateLeagueDialogProps) {
-  const [formData, setFormData] = useState<CreateLeagueData>({
+interface TimeSelection {
+  start: string;
+  end: string;
+}
+
+export function CreateLeagueDialog({ isOpen, onOpenChange, onSave, isSuperuser, isLoading }: CreateLeagueDialogProps) {
+  const { toast } = useToast();
+
+  // Update the initial form state
+  const [formData, setFormData] = useState<FormState>({
     name: "",
     description: "",
     format: "round_robin",
-    rules: [],
+    rules: {
+      allowed: [],
+    },
     team_count: 8,
-    requires_approval: true,
-    season_start: "", // Initialize as empty string
-    season_end: "", // Initialize as empty string
-    schedule_days: [], // Initialize as empty array
-    open_registration: true, // Default to true
+    requires_approval: false,
+    open_registration: true,
+    created_by: "",
+    estimated_weeks: 12,
+    season_start: null,
+    season_end: null,
+    schedule: {
+      type: "multiple_days",
+      days: [],
+    },
   });
 
   const [showConfirmation, setShowConfirmation] = useState(false);
@@ -77,6 +129,11 @@ export function CreateLeagueDialog({
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [selectedDays, setSelectedDays] = useState<WeekDay[]>([]); // Track selected days
   const [timeRanges, setTimeRanges] = useState<{ [key in WeekDay]?: { start: string; end: string } }>({}); // Track time ranges
+  const [selectedDay, setSelectedDay] = useState<WeekDay | null>(null);
+  const [tempTimeSelection, setTempTimeSelection] = useState<TimeSelection>({ start: "", end: "" });
+  const [availableAdmins, setAvailableAdmins] = useState<AvailableAdmin[]>([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const supabase = createClientComponentClient<Database>();
 
   useEffect(() => {
     if (startDate) {
@@ -87,16 +144,62 @@ export function CreateLeagueDialog({
     }
   }, [startDate, formData.team_count]);
 
+  // Load available administrators when dialog opens
+  useEffect(() => {
+    const loadAvailableAdmins = async () => {
+      if (!isOpen || !isSuperuser) return;
+
+      setLoadingAdmins(true);
+      try {
+        const { data, error } = await supabase.from("users").select("id, first_name, last_name").order("first_name");
+
+        if (error) throw error;
+
+        // Transform the data to ensure no null values
+        const transformedData: AvailableAdmin[] = (data || []).map((user) => ({
+          id: user.id,
+          first_name: user.first_name || "", // Convert null to empty string
+          last_name: user.last_name || "", // Convert null to empty string
+        }));
+
+        setAvailableAdmins(transformedData);
+      } catch (error) {
+        console.error("Error loading available administrators:", error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load available administrators",
+        });
+      } finally {
+        setLoadingAdmins(false);
+      }
+    };
+
+    loadAvailableAdmins();
+  }, [isOpen, isSuperuser, supabase]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showConfirmation) {
       setShowConfirmation(true);
       return;
     }
+
+    // Transform timeRanges into the correct schedule format
+    const scheduleData = {
+      type: "multiple_days" as const,
+      days: Object.entries(timeRanges).map(([day, times]) => ({
+        day,
+        start_time: times.start,
+        end_time: times.end,
+      })),
+    };
+
     await onSave({
       ...formData,
-      season_start: startDate ? startDate.toISOString() : "", // Ensure it's a string
-      season_end: endDate ? endDate.toISOString() : "", // Ensure it's a string
+      schedule: scheduleData,
+      season_start: startDate?.toISOString() || null,
+      season_end: endDate?.toISOString() || null,
     });
     setShowConfirmation(false);
   };
@@ -112,11 +215,34 @@ export function CreateLeagueDialog({
     }));
   };
 
+  const handleDialogClose = (open: boolean, day: WeekDay) => {
+    if (!open) {
+      setTempTimeSelection({ start: "", end: "" });
+    }
+    setSelectedDay(open ? day : null);
+  };
+
+  const handleSaveTimeSelection = (day: WeekDay) => {
+    if (tempTimeSelection.start && tempTimeSelection.end) {
+      setTimeRanges((prev) => ({
+        ...prev,
+        [day]: { start: tempTimeSelection.start, end: tempTimeSelection.end },
+      }));
+      setSelectedDay(null);
+      setTempTimeSelection({ start: "", end: "" });
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{showConfirmation ? "Confirm League Creation" : "Create New League"}</DialogTitle>
+          <DialogDescription>
+            {showConfirmation
+              ? "Please review the league details before confirming."
+              : "Fill in the details to create a new league."}
+          </DialogDescription>
         </DialogHeader>
 
         {showConfirmation ? (
@@ -130,7 +256,7 @@ export function CreateLeagueDialog({
                 <strong>Format:</strong> {formData.format}
               </p>
               <p>
-                <strong>Rules:</strong> {formData.rules.join(", ")}
+                <strong>Rules:</strong> {formData.rules?.allowed?.join(", ") || "None"}
               </p>
               <p>
                 <strong>Teams:</strong> {formData.team_count}
@@ -206,11 +332,15 @@ export function CreateLeagueDialog({
                   <div key={rule} className="flex items-center space-x-2">
                     <Checkbox
                       id={rule}
-                      checked={formData.rules.includes(rule)}
+                      checked={formData.rules?.allowed?.includes(rule) ?? false}
                       onCheckedChange={(checked) => {
                         setFormData({
                           ...formData,
-                          rules: checked ? [...formData.rules, rule] : formData.rules.filter((r) => r !== rule),
+                          rules: {
+                            allowed: checked
+                              ? [...(formData.rules?.allowed || []), rule]
+                              : (formData.rules?.allowed || []).filter((r) => r !== rule),
+                          },
                         });
                       }}
                     />
@@ -233,77 +363,158 @@ export function CreateLeagueDialog({
               />
             </div>
 
-            {/* Approval Requirement */}
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="requires_approval"
-                checked={formData.requires_approval}
-                onCheckedChange={(checked) => setFormData({ ...formData, requires_approval: checked })}
-              />
-              <Label htmlFor="requires_approval">Require admin approval for teams to join</Label>
-            </div>
-
-            {/* Open Registration */}
+            {/* Registration Setting */}
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="open_registration"
                 checked={formData.open_registration}
-                onCheckedChange={(checked) => setFormData({ ...formData, open_registration: checked })}
+                onCheckedChange={(checked) =>
+                  setFormData({
+                    ...formData,
+                    open_registration: checked === true,
+                  })
+                }
               />
-              <Label htmlFor="open_registration">Open registration for teams</Label>
+              <Label htmlFor="open_registration">Allow teams to join without admin approval</Label>
             </div>
 
-            {/* Schedule */}
+            {/* Schedule Section */}
             <div className="space-y-4">
               <Label>Schedule</Label>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {DAYS.map((day) => (
-                  <div key={day} className="flex flex-col">
-                    <Button
-                      variant="outline"
-                      onClick={() => toggleDaySelection(day)}
-                      className={cn("w-full", selectedDays.includes(day) ? "bg-blue-500 text-white" : "")}
-                    >
-                      {day}
-                    </Button>
-                    {selectedDays.includes(day) && (
-                      <div className="grid grid-cols-2 gap-4 mt-2">
-                        <Select
-                          value={timeRanges[day]?.start || ""}
-                          onValueChange={(value) => handleTimeChange(day, value, timeRanges[day]?.end || "")}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Start Time" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {TIME_OPTIONS.map((time) => (
-                              <SelectItem key={time} value={time}>
-                                {time}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Select
-                          value={timeRanges[day]?.end || ""}
-                          onValueChange={(value) => handleTimeChange(day, timeRanges[day]?.start || "", value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="End Time" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {TIME_OPTIONS.map((time) => (
-                              <SelectItem key={time} value={time}>
-                                {time}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                  <Dialog key={day} open={selectedDay === day} onOpenChange={(open) => handleDialogClose(open, day)}>
+                    <DialogTrigger asChild>
+                      <Button variant={timeRanges[day] ? "default" : "outline"} className="w-full h-24 flex flex-col">
+                        <span>{day}</span>
+                        {timeRanges[day] && (
+                          <span className="text-xs mt-2">
+                            {timeRanges[day]?.start} - {timeRanges[day]?.end}
+                          </span>
+                        )}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Set Schedule for {day}</DialogTitle>
+                        <DialogDescription>Choose the start and end times for {day}'s matches.</DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-4 py-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="flex flex-col gap-2">
+                            <Label htmlFor="start">Start Time</Label>
+                            <Select
+                              value={tempTimeSelection.start}
+                              onValueChange={(value) => setTempTimeSelection({ ...tempTimeSelection, start: value })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select start time" />
+                              </SelectTrigger>
+                              <SelectContent position="popper" className="max-h-[200px] overflow-y-auto">
+                                {TIME_OPTIONS.map((time) => (
+                                  <SelectItem key={time} value={time}>
+                                    {time}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <Label htmlFor="end">End Time</Label>
+                            <Select
+                              value={tempTimeSelection.end}
+                              onValueChange={(value) => setTempTimeSelection({ ...tempTimeSelection, end: value })}
+                              disabled={!tempTimeSelection.start}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select end time" />
+                              </SelectTrigger>
+                              <SelectContent position="popper" className="max-h-[200px] overflow-y-auto">
+                                {TIME_OPTIONS.filter(
+                                  (time) => !tempTimeSelection.start || time > tempTimeSelection.start
+                                ).map((time) => (
+                                  <SelectItem key={time} value={time}>
+                                    {time}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="flex justify-between mt-4">
+                          <Button
+                            variant="destructive"
+                            onClick={() => {
+                              setTimeRanges((prev) => {
+                                const newRanges = { ...prev };
+                                delete newRanges[day];
+                                return newRanges;
+                              });
+                              setTempTimeSelection({ start: "", end: "" });
+                              setSelectedDay(null);
+                            }}
+                          >
+                            Clear Schedule
+                          </Button>
+                          <Button
+                            onClick={() => handleSaveTimeSelection(day)}
+                            disabled={!tempTimeSelection.start || !tempTimeSelection.end}
+                          >
+                            Save
+                          </Button>
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    </DialogContent>
+                  </Dialog>
                 ))}
               </div>
             </div>
+
+            {/* Calendar Section */}
+            <div className="space-y-4">
+              <Label>Season Dates</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col">
+                  <Label htmlFor="start_date">Start Date</Label>
+                  <Calendar mode="single" selected={startDate} onSelect={setStartDate} className="rounded-md border" />
+                </div>
+                <div className="flex flex-col">
+                  <Label htmlFor="end_date">End Date</Label>
+                  <Calendar
+                    mode="single"
+                    selected={endDate}
+                    onSelect={setEndDate}
+                    className="rounded-md border"
+                    disabled={(date) => (startDate ? date < startDate : false)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Admin Selection (only for superusers) */}
+            {isSuperuser && (
+              <div className="space-y-2">
+                <Label htmlFor="admin">League Administrator</Label>
+                <Select
+                  value={formData.admin_id}
+                  onValueChange={(value) => setFormData({ ...formData, admin_id: value })}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingAdmins ? "Loading..." : "Select an administrator"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <div className="max-h-[200px] overflow-y-auto">
+                      {availableAdmins.map((admin) => (
+                        <SelectItem key={admin.id} value={admin.id}>
+                          {`${admin.first_name || ""} ${admin.last_name || ""}`.trim() || "Unnamed User"}
+                        </SelectItem>
+                      ))}
+                    </div>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

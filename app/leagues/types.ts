@@ -41,3 +41,26 @@ export type AdminDialogState = {
   isLoading: boolean;
   admins: AvailableAdmin[];
 };
+
+export interface CreateLeagueFormData {
+  name: string;
+  description: string | null;
+  format: LeagueFormat;
+  rules: {
+    allowed: LeagueRules[];
+  };
+  team_count: number;
+  requires_approval: boolean;
+  season_start: string | null;
+  season_end: string | null;
+  estimated_weeks: number;
+  schedule: {
+    type: "multiple_days";
+    days: Array<{
+      day: string;
+      start_time: string;
+      end_time: string;
+    }>;
+  };
+  admin_id?: string;
+}
