@@ -111,8 +111,12 @@ export default function LeaguePage() {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="font-medium">Format:</span>
-                  <span>{formatLeagueFormat(league.format)}</span>
+                  <span className="font-medium">Game Format:</span>
+                  <span>{league.game_format}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium">League Format:</span>
+                  <span>{league.league_format}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Teams:</span>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { authService } from "@/lib/auth-service";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -20,12 +20,25 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (user) {
       window.location.href = "/dashboard";
     }
   }, [user]);
+
+  useEffect(() => {
+    // Check for authentication_required message
+    const message = searchParams.get("message");
+    if (message === "authentication_required") {
+      toast({
+        variant: "destructive",
+        title: "Authentication Required",
+        description: "You must be signed in to access that page",
+      });
+    }
+  }, [searchParams, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
