@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import type { Database } from "@/lib/database.types";
 import { OverviewTab } from "./components/overview-tab";
-import { ScheduleTab } from "./components/schedule-tab";
+import { ScheduleTab } from "../components/schedule-tab";
 import { StandingsTab } from "./components/standings-tab";
 import { PlayersTab } from "./components/players-tab";
 import type { Team } from "@/app/teams/types";
@@ -101,9 +101,7 @@ export default function TeamPage() {
         </TabsContent>
 
         <TabsContent value="schedule">
-          <Card className="p-6">
-            <ScheduleTab teamId={team.id} />
-          </Card>
+          <ScheduleTab teamId={team.id} />
         </TabsContent>
 
         <TabsContent value="standings">

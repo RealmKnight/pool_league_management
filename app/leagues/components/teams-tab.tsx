@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { AddTeamDialog } from "./add-team-dialog";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { useRouter } from "next/navigation";
 import type { Database } from "@/lib/database.types";
 import type { League } from "../types";
 
@@ -17,6 +18,7 @@ export function TeamsTab({ league }: TeamsTabProps) {
   const [isAddTeamOpen, setIsAddTeamOpen] = useState(false);
   const [teams, setTeams] = useState<Array<{ id: string; name: string; home_venue: string | null }>>([]);
   const supabase = createClientComponentClient<Database>();
+  const router = useRouter();
 
   // Fetch teams assigned to this league
   const fetchTeams = async () => {
@@ -39,6 +41,10 @@ export function TeamsTab({ league }: TeamsTabProps) {
     fetchTeams();
   }, [league.id]);
 
+  const handleTeamClick = (teamId: string) => {
+    router.push(`/teams/${teamId}`);
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -55,7 +61,11 @@ export function TeamsTab({ league }: TeamsTabProps) {
           ) : (
             <div className="space-y-4">
               {teams.map((team) => (
-                <div key={team.id} className="flex items-center justify-between p-4 border rounded-lg">
+                <div
+                  key={team.id}
+                  onClick={() => handleTeamClick(team.id)}
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent hover:cursor-pointer transition-colors"
+                >
                   <div>
                     <h4 className="font-medium">{team.name}</h4>
                     {team.home_venue && <p className="text-sm text-muted-foreground">Home Venue: {team.home_venue}</p>}
