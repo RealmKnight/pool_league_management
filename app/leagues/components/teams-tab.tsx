@@ -4,78 +4,75 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
-import { LoadingState } from "./loading-state";
-import { ErrorState } from "./error-state";
-import { useAuth } from "@/components/providers/auth-provider";
-import type { League } from "../types";
+import { AddTeamDialog } from "./add-team-dialog";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
+import type { League } from "../types";
 
 interface TeamsTabProps {
   league: League;
 }
 
 export function TeamsTab({ league }: TeamsTabProps) {
-  const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isAddTeamOpen, setIsAddTeamOpen] = useState(false);
+  const [teams, setTeams] = useState<Array<{ id: string; name: string; home_venue: string | null }>>([]);
+  const supabase = createClientComponentClient<Database>();
 
-  // Helper function to check if user has permission
-  const canManageTeams = () => {
-    if (!user?.id) return false;
+  // Fetch teams assigned to this league
+  const fetchTeams = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("teams")
+        .select("id, name, home_venue")
+        .eq("league_id", league.id)
+        .order("name");
 
-    // Check if user is superuser
-    if (userRole === "superuser") return true;
-
-    // Check league permissions
-    return league.league_permissions?.some(
-      (p) => p.user_id === user.id && (p.permission_type === "league_admin" || p.permission_type === "league_secretary")
-    );
+      if (error) throw error;
+      setTeams(data || []);
+    } catch (error) {
+      console.error("Error fetching teams:", error);
+    }
   };
 
+  // Add useEffect to fetch teams on mount
   useEffect(() => {
-    const loadUserRole = async () => {
-      if (!user?.id) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const supabase = createClientComponentClient<Database>();
-        const { data, error } = await supabase.from("users").select("role").eq("id", user.id).single();
-
-        if (error) throw error;
-        setUserRole(data.role);
-      } catch (error) {
-        console.error("Error loading user role:", error);
-        setError("Failed to load user permissions");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadUserRole();
-  }, [user?.id]);
-
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState message={error} />;
+    fetchTeams();
+  }, [league.id]);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Teams</CardTitle>
-        {canManageTeams() && (
-          <Button size="sm">
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Teams</CardTitle>
+          <Button size="sm" onClick={() => setIsAddTeamOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add Team
           </Button>
-        )}
-      </CardHeader>
-      <CardContent>
-        {/* Teams list will go here */}
-        <div className="text-sm text-muted-foreground">No teams added yet</div>
-      </CardContent>
-    </Card>
+        </CardHeader>
+        <CardContent>
+          {teams.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No teams assigned yet</div>
+          ) : (
+            <div className="space-y-4">
+              {teams.map((team) => (
+                <div key={team.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div>
+                    <h4 className="font-medium">{team.name}</h4>
+                    {team.home_venue && <p className="text-sm text-muted-foreground">Home Venue: {team.home_venue}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <AddTeamDialog
+        isOpen={isAddTeamOpen}
+        onOpenChange={setIsAddTeamOpen}
+        leagueId={league.id}
+        onSuccess={fetchTeams}
+      />
+    </div>
   );
 }
