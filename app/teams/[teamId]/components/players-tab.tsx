@@ -1,12 +1,60 @@
-import React from "react";
+"use client";
+
+import React, { useState } from "react";
 import type { Team } from "@/app/teams/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ManagePlayerRole } from "./manage-player-role";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import type { Database } from "@/lib/database.types";
 
 interface PlayersTabProps {
   team: Team;
 }
 
+type TeamPlayer = Database["public"]["Tables"]["team_players"]["Row"] & {
+  users: {
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+  } | null;
+};
+
 export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
+  const [players, setPlayers] = useState<TeamPlayer[]>(team.team_players || []);
+  const supabase = createClientComponentClient<Database>();
+
+  const refreshPlayers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("teams")
+        .select(
+          `
+          team_players (
+            id,
+            user_id,
+            jersey_number,
+            position,
+            status,
+            users (
+              first_name,
+              last_name,
+              email
+            )
+          )
+        `
+        )
+        .eq("id", team.id)
+        .single();
+
+      if (error) throw error;
+      if (data?.team_players) {
+        setPlayers(data.team_players as TeamPlayer[]);
+      }
+    } catch (error) {
+      console.error("Error refreshing players:", error);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-semibold">Team Players</h2>
@@ -18,10 +66,11 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
             <TableHead>Jersey Number</TableHead>
             <TableHead>Position</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Role</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {team.team_players?.map((player) => (
+          {players.map((player) => (
             <TableRow key={player.id}>
               <TableCell>
                 {player.users?.first_name} {player.users?.last_name}
@@ -29,6 +78,14 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
               <TableCell>{player.jersey_number || "N/A"}</TableCell>
               <TableCell>{player.position || "N/A"}</TableCell>
               <TableCell>{player.status}</TableCell>
+              <TableCell>
+                <ManagePlayerRole
+                  teamId={team.id}
+                  playerId={player.id}
+                  currentRole={player.position || "player"}
+                  onRoleUpdated={refreshPlayers}
+                />
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>

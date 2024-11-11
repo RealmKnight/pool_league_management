@@ -101,11 +101,22 @@ export function AddPlayerDialog({ teamId, isOpen, onClose, onPlayerAdded }: AddP
 
   const handleAcceptRequest = async (requestId: string, userId: string) => {
     try {
+      // Get team data first
+      const { data: teamData, error: teamError } = await supabase
+        .from("teams")
+        .select("league_id")
+        .eq("id", teamId)
+        .single();
+
+      if (teamError) throw teamError;
+
       // Begin transaction
       const { error: teamPlayerError } = await supabase.from("team_players").insert({
         team_id: teamId,
         user_id: userId,
-        status: "active",
+        league_id: teamData.league_id,
+        status: "active" as Database["public"]["Enums"]["player_status_enum"],
+        position: "player" as Database["public"]["Enums"]["player_position_enum"],
         join_date: new Date().toISOString(),
       });
 
@@ -149,12 +160,12 @@ export function AddPlayerDialog({ teamId, isOpen, onClose, onPlayerAdded }: AddP
           team_id: teamId,
           user_id: userId,
           league_id: teamData.league_id,
-          status: "active",
-          position: "forward",
+          status: "active" as Database["public"]["Enums"]["player_status_enum"],
+          position: "player" as Database["public"]["Enums"]["player_position_enum"],
           join_date: new Date().toISOString(),
         };
 
-        const { error: insertError } = await supabase.from("team_players").insert([newPlayer]);
+        const { error: insertError } = await supabase.from("team_players").insert(newPlayer);
 
         if (insertError) {
           console.error("Insert error:", insertError);

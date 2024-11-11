@@ -1,56 +1,128 @@
-import React from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+"use client";
+
+import React, { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import type { Database } from "@/lib/database.types";
 import type { AvailableCaptain } from "../types";
+import { useToast } from "@/hooks/use-toast";
+import * as Icons from "@/components/icons";
 
 interface SecretaryDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (secretaryId: string) => void;
+  teamId: string;
+  currentSecretaryId?: string | null;
+  onSave: () => void;
   availableUsers: AvailableCaptain[];
   isLoading: boolean;
 }
 
-export const SecretaryDialog: React.FC<SecretaryDialogProps> = ({
+export function SecretaryDialog({
   isOpen,
   onOpenChange,
+  teamId,
+  currentSecretaryId,
   onSave,
   availableUsers,
   isLoading,
-}) => {
-  const [selectedSecretaryId, setSelectedSecretaryId] = React.useState<string | null>(null);
+}: SecretaryDialogProps) {
+  const [selectedSecretaryId, setSelectedSecretaryId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const supabase = createClientComponentClient<Database>();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedSecretaryId(null);
+    }
+  }, [isOpen]);
+
+  const handleSave = async () => {
+    if (!selectedSecretaryId) return;
+
+    try {
+      setIsSaving(true);
+
+      const { error } = await supabase.rpc("manage_team_secretary_role", {
+        p_team_id: teamId,
+        p_user_id: selectedSecretaryId,
+        p_previous_secretary_id: currentSecretaryId,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Team secretary updated successfully",
+      });
+
+      onSave();
+      onOpenChange(false);
+    } catch (error: any) {
+      console.error("Error updating secretary:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to update team secretary",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Select a Secretary</DialogTitle>
+          <DialogTitle>Change Team Secretary</DialogTitle>
+          <DialogDescription>
+            Select a team member to assign as team secretary. This will update their role and permissions.
+          </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
-          {availableUsers.map((user) => (
-            <div key={user.id}>
-              <input
-                type="radio"
-                id={user.id}
-                name="secretary"
-                value={user.id}
-                onChange={() => setSelectedSecretaryId(user.id)}
-              />
-              <label htmlFor={user.id} className="ml-2">
-                {user.first_name} {user.last_name}
-              </label>
-            </div>
-          ))}
+        <div className="grid gap-4 py-4">
+          <Select
+            value={selectedSecretaryId || undefined}
+            onValueChange={(value: string) => setSelectedSecretaryId(value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select a secretary" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableUsers.map((user) => (
+                <SelectItem key={user.id} value={user.id} disabled={user.id === currentSecretaryId}>
+                  {`${user.first_name} ${user.last_name}`}
+                  {user.id === currentSecretaryId && " (Current)"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <DialogFooter>
-          <Button
-            onClick={() => selectedSecretaryId && onSave(selectedSecretaryId)}
-            disabled={!selectedSecretaryId || isLoading}
-          >
-            Save
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={!selectedSecretaryId || isSaving || isLoading}>
+            {isSaving ? (
+              <>
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              "Save"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
-};
+}
