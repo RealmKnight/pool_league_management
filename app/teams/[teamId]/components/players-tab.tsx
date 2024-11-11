@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import type { Team } from "@/app/teams/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ManagePlayerRole } from "./manage-player-role";
@@ -20,8 +20,15 @@ type TeamPlayer = Database["public"]["Tables"]["team_players"]["Row"] & {
 };
 
 export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
-  const [players, setPlayers] = useState<TeamPlayer[]>(team.team_players || []);
+  const [players, setPlayers] = useState<TeamPlayer[]>([]);
   const supabase = createClientComponentClient<Database>();
+
+  // Initial load and update when team changes
+  useEffect(() => {
+    if (team.team_players) {
+      setPlayers(team.team_players as TeamPlayer[]);
+    }
+  }, [team.team_players]);
 
   const refreshPlayers = async () => {
     try {
@@ -54,6 +61,29 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
       console.error("Error refreshing players:", error);
     }
   };
+
+  // Subscribe to changes in team_players table
+  useEffect(() => {
+    const channel = supabase
+      .channel("team_players_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "team_players",
+          filter: `team_id=eq.${team.id}`,
+        },
+        () => {
+          refreshPlayers();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [team.id, supabase]);
 
   return (
     <div className="space-y-6">

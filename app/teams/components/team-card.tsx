@@ -5,6 +5,10 @@ import type { Team } from "../types";
 import { Button } from "@/components/ui/button";
 import { UserPlus, UserPlus2 } from "lucide-react";
 import { useUser } from "@/hooks/use-user";
+import { useRouter } from "next/navigation";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import type { Database } from "@/lib/database.types";
+import { useState, useEffect } from "react";
 
 interface TeamCardProps {
   team: Team;
@@ -14,12 +18,48 @@ interface TeamCardProps {
 
 export const TeamCard: React.FC<TeamCardProps> = ({ team, onCaptainChange, onSecretaryChange }) => {
   const { user, userRoles } = useUser();
+  const router = useRouter();
+  const supabase = createClientComponentClient<Database>();
+  const [isInLeague, setIsInLeague] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Find captain and secretary from team permissions
   const captain = team.team_permissions?.find((p) => p.permission_type === "team_captain")?.users;
   const secretary = team.team_permissions?.find((p) => p.permission_type === "team_secretary")?.users;
 
   const isTeamMember = team.team_permissions?.some((p) => p.user_id === user?.id);
+
+  // Check if user is already in a team in this league
+  useEffect(() => {
+    const checkLeagueMembership = async () => {
+      if (!user || !team.league_id) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("team_players")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("league_id", team.league_id)
+          .single();
+
+        if (error && error.code !== "PGRST116") {
+          // PGRST116 is the "no rows returned" error
+          console.error("Error checking league membership:", error);
+        }
+
+        setIsInLeague(!!data);
+      } catch (error) {
+        console.error("Error checking league membership:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkLeagueMembership();
+  }, [user, team.league_id, supabase]);
 
   const canManagePlayers = () => {
     if (!user || !userRoles) return false;
@@ -51,7 +91,12 @@ export const TeamCard: React.FC<TeamCardProps> = ({ team, onCaptainChange, onSec
     );
   };
 
-  const canJoinTeam = team.status === "active" && !isTeamMember;
+  const canJoinTeam = team.status === "active" && !isTeamMember && !isInLeague;
+
+  const handleAddPlayers = (e: React.MouseEvent) => {
+    e.preventDefault();
+    router.push(`/teams/${team.id}?tab=players&dialog=add-players`);
+  };
 
   return (
     <Card className="group hover:shadow-lg transition-shadow">
@@ -120,26 +165,19 @@ export const TeamCard: React.FC<TeamCardProps> = ({ team, onCaptainChange, onSec
           )}
 
           {canManagePlayers() && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={(e) => {
-                e.preventDefault();
-                window.location.href = `/teams/${team.id}/players`;
-              }}
-            >
+            <Button size="sm" variant="secondary" onClick={handleAddPlayers}>
               <UserPlus className="h-4 w-4 mr-2" />
               Add Players
             </Button>
           )}
 
-          {canJoinTeam && (
+          {!loading && canJoinTeam && (
             <Button
               size="sm"
               variant="outline"
               onClick={(e) => {
                 e.preventDefault();
-                window.location.href = `/teams/${team.id}/join`;
+                router.push(`/teams/${team.id}/join`);
               }}
             >
               <UserPlus2 className="h-4 w-4 mr-2" />

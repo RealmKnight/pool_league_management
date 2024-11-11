@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
@@ -17,12 +17,14 @@ import { AddPlayerDialog } from "./components/add-player-dialog";
 
 export default function TeamPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const teamId = params?.teamId as string;
   const supabase = createClientComponentClient<Database>();
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
   const { user, userRoles } = useUser();
   const [isAddPlayerDialogOpen, setIsAddPlayerDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
     const fetchTeam = async () => {
@@ -145,6 +147,20 @@ export default function TeamPage() {
     return userPermission?.permission_type === "team_captain" || userPermission?.permission_type === "team_secretary";
   };
 
+  // Handle initial state from URL parameters
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const dialog = searchParams.get("dialog");
+
+    if (tab) {
+      setActiveTab(tab);
+    }
+
+    if (dialog === "add-players") {
+      setIsAddPlayerDialogOpen(true);
+    }
+  }, [searchParams]);
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -160,7 +176,7 @@ export default function TeamPage() {
         {canAddPlayers() && <Button onClick={() => setIsAddPlayerDialogOpen(true)}>Add Players</Button>}
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
@@ -194,7 +210,11 @@ export default function TeamPage() {
       <AddPlayerDialog
         teamId={team.id}
         isOpen={isAddPlayerDialogOpen}
-        onClose={() => setIsAddPlayerDialogOpen(false)}
+        onClose={() => {
+          setIsAddPlayerDialogOpen(false);
+          // Remove query parameters when closing dialog
+          window.history.replaceState({}, "", `/teams/${teamId}`);
+        }}
         onPlayerAdded={handlePlayerAdded}
       />
     </div>
