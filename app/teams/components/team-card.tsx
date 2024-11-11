@@ -4,42 +4,53 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Team } from "../types";
 import { Button } from "@/components/ui/button";
 import { UserPlus, UserPlus2 } from "lucide-react";
+import { useUser } from "@/hooks/use-user";
 
 interface TeamCardProps {
   team: Team;
-  userRole: string | null;
   onCaptainChange: (teamId: string) => void;
   onSecretaryChange: (teamId: string) => void;
-  canManageSecretaries: boolean;
-  userId: string;
 }
 
-export const TeamCard: React.FC<TeamCardProps> = ({
-  team,
-  userRole,
-  onCaptainChange,
-  onSecretaryChange,
-  canManageSecretaries,
-  userId,
-}) => {
+export const TeamCard: React.FC<TeamCardProps> = ({ team, onCaptainChange, onSecretaryChange }) => {
+  const { user, userRoles } = useUser();
+
   // Find captain and secretary from team permissions
   const captain = team.team_permissions?.find((p) => p.permission_type === "team_captain")?.users;
   const secretary = team.team_permissions?.find((p) => p.permission_type === "team_secretary")?.users;
 
-  // Check if user can manage players
-  const canManagePlayers =
-    userRole === "superuser" ||
-    userRole === "league_admin" ||
-    userRole === "team_captain" ||
-    userRole === "team_secretary" ||
-    team.team_permissions?.some(
-      (p) => p.user_id === userId && (p.permission_type === "team_captain" || p.permission_type === "team_secretary")
+  const isTeamMember = team.team_permissions?.some((p) => p.user_id === user?.id);
+
+  const canManagePlayers = () => {
+    if (!user || !userRoles) return false;
+
+    // Global roles that can manage players
+    if (
+      userRoles.includes("superuser") ||
+      userRoles.includes("league_admin") ||
+      userRoles.includes("league_secretary")
+    ) {
+      return true;
+    }
+
+    // Team-specific roles that can manage players
+    const userPermission = team.team_permissions?.find((permission) => permission.user_id === user.id);
+
+    return userPermission?.permission_type === "team_captain" || userPermission?.permission_type === "team_secretary";
+  };
+
+  const canManageCaptain = () => {
+    return (
+      userRoles.includes("superuser") || userRoles.includes("league_admin") || userRoles.includes("league_secretary")
     );
+  };
 
-  // Check if user is already a member of the team
-  const isTeamMember = team.team_permissions?.some((p) => p.user_id === userId);
+  const canManageSecretary = () => {
+    return (
+      userRoles.includes("superuser") || userRoles.includes("league_admin") || userRoles.includes("league_secretary")
+    );
+  };
 
-  // Check if team is open to join
   const canJoinTeam = team.status === "active" && !isTeamMember;
 
   return (
@@ -84,10 +95,7 @@ export const TeamCard: React.FC<TeamCardProps> = ({
 
       <CardContent className="pt-0">
         <div className="flex flex-wrap gap-2">
-          {(userRole === "captain" ||
-            userRole === "league_admin" ||
-            userRole === "league_secretary" ||
-            userRole === "superuser") && (
+          {canManageCaptain() && (
             <Button
               size="sm"
               onClick={(e) => {
@@ -98,7 +106,8 @@ export const TeamCard: React.FC<TeamCardProps> = ({
               Manage Captain
             </Button>
           )}
-          {canManageSecretaries && (
+
+          {canManageSecretary() && (
             <Button
               size="sm"
               onClick={(e) => {
@@ -109,7 +118,8 @@ export const TeamCard: React.FC<TeamCardProps> = ({
               Manage Secretary
             </Button>
           )}
-          {canManagePlayers && (
+
+          {canManagePlayers() && (
             <Button
               size="sm"
               variant="secondary"
@@ -122,6 +132,7 @@ export const TeamCard: React.FC<TeamCardProps> = ({
               Add Players
             </Button>
           )}
+
           {canJoinTeam && (
             <Button
               size="sm"

@@ -216,7 +216,12 @@ export default function TeamsPage() {
   };
 
   const canCreateTeam = () => {
-    return userRole === "superuser" || userRole === "team_captain";
+    return (
+      userRole === "superuser" ||
+      userRole === "league_admin" ||
+      userRole === "league_secretary" ||
+      userRole === "team_captain"
+    );
   };
 
   const [createDialog, setCreateDialog] = useState({

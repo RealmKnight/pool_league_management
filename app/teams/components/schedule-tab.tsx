@@ -145,7 +145,7 @@ export function ScheduleTab({ teamId }: ScheduleTabProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Team Schedule</CardTitle>
+        <CardTitle className="text-2xl font-semibold">Team Schedule</CardTitle>
       </CardHeader>
       <CardContent>
         {matches.length === 0 ? (
