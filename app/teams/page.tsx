@@ -1,14 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense, useMemo } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { TeamCard } from "@/app/teams/components/team-card";
 import { useTeams } from "@/app/teams/hooks/use-teams";
@@ -17,34 +15,27 @@ import { CaptainDialog } from "@/app/teams/components/captain-dialog";
 import { SecretaryDialog } from "@/app/teams/components/secretary-dialog";
 import type { AvailableCaptain } from "@/app/teams/types";
 import { CreateTeamDialog, type CreateTeamData } from "@/app/teams/components/create-team-dialog";
+import { LoadingTeams } from "./components/loading-teams";
+
+const handleError = (error: unknown, message: string) => {
+  console.error(error);
+  toast({
+    variant: "destructive",
+    title: "Error",
+    description: message,
+  });
+};
 
 export default function TeamsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const supabase = createClientComponentClient<Database>();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCaptainId, setSelectedCaptainId] = useState<string | null>(null);
-  const [selectedSecretaryId, setSelectedSecretaryId] = useState<string | null>(null);
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [userTeamMemberships, setUserTeamMemberships] = useState<Record<string, boolean>>({});
 
-  // Use the custom hook
-  const { teams, filteredTeams, loading, userRole, loadInitialData, handleSearch } = useTeams(user?.id);
-
-  // Initial data loading
-  useEffect(() => {
-    loadInitialData();
-  }, [loadInitialData]);
-
-  // Helper functions for permissions
-  const isTeamCaptain = (team: Team, userId: string) => {
-    return team.team_permissions?.some((p) => p.permission_type === "team_captain" && p.user_id === userId);
-  };
-
-  const canManageSecretaries = (team: Team, userId: string, userRole: string | null) => {
-    return userRole === "superuser" || isTeamCaptain(team, userId);
-  };
-
+  // Dialog states
   const [captainDialog, setCaptainDialog] = useState({
     isOpen: false,
     teamId: null as string | null,
@@ -59,6 +50,21 @@ export default function TeamsPage() {
     users: [] as AvailableCaptain[],
   });
 
+  const [createDialog, setCreateDialog] = useState({
+    isOpen: false,
+    isLoading: false,
+    availableCaptains: [] as AvailableCaptain[],
+  });
+
+  // Use the custom hook
+  const { teams, filteredTeams, loading, userRole, loadInitialData, handleSearch } = useTeams(user?.id);
+
+  // Initial data loading
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
+
+  // Handler functions
   const handleCaptainChange = async (teamId: string) => {
     setCaptainDialog((prev) => ({ ...prev, isOpen: true, teamId, isLoading: true }));
     try {
@@ -105,142 +111,12 @@ export default function TeamsPage() {
     }
   };
 
-  const handleIconClick = () => {
-    setIsSearchVisible(true);
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 0);
-  };
-
-  // Hide the search input when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (inputRef.current && !inputRef.current.contains(event.target as Node)) {
-        setIsSearchVisible(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
-
-  const handleSaveCaptain = async (captainId: string) => {
-    if (!captainDialog.teamId) return;
-
-    try {
-      // First check if the new captain already has this permission
-      const { data: existingPermissions, error: checkError } = await supabase
-        .from("team_permissions")
-        .select("*")
-        .eq("team_id", captainDialog.teamId)
-        .eq("user_id", captainId)
-        .eq("permission_type", "team_captain");
-
-      if (checkError) throw checkError;
-
-      if (existingPermissions && existingPermissions.length > 0) {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "This user is already a captain for this team",
-        });
-        return;
-      }
-
-      // Remove old captain permissions
-      const { error: deleteError } = await supabase
-        .from("team_permissions")
-        .delete()
-        .eq("team_id", captainDialog.teamId)
-        .eq("permission_type", "team_captain");
-
-      if (deleteError) throw deleteError;
-
-      // Add new captain permission
-      const { error: insertError } = await supabase.from("team_permissions").insert({
-        team_id: captainDialog.teamId,
-        user_id: captainId,
-        permission_type: "team_captain",
-      });
-
-      if (insertError) throw insertError;
-
-      // Refresh the team data
-      await loadInitialData();
-
-      toast({
-        title: "Success",
-        description: "Team captain changed successfully",
-      });
-      setCaptainDialog((prev) => ({ ...prev, isOpen: false }));
-    } catch (error) {
-      console.error("Error changing team captain:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to change team captain",
-      });
-    }
-  };
-
-  const handleSaveSecretary = async (secretaryId: string) => {
-    if (!secretaryDialog.teamId) return;
-
-    try {
-      // Use the stored procedure for managing team secretary
-      const { error: procedureError } = await supabase.rpc("manage_team_secretary", {
-        p_team_id: secretaryDialog.teamId,
-        p_user_id: secretaryId,
-      });
-
-      if (procedureError) throw procedureError;
-
-      // Refresh the team data
-      await loadInitialData();
-
-      toast({
-        title: "Success",
-        description: "Team secretary changed successfully",
-      });
-      setSecretaryDialog((prev) => ({ ...prev, isOpen: false }));
-    } catch (error) {
-      console.error("Error changing team secretary:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to change team secretary",
-      });
-    }
-  };
-
-  const canCreateTeam = () => {
-    return (
-      userRole === "superuser" ||
-      userRole === "league_admin" ||
-      userRole === "league_secretary" ||
-      userRole === "team_captain"
-    );
-  };
-
-  const [createDialog, setCreateDialog] = useState({
-    isOpen: false,
-    isLoading: false,
-    availableCaptains: [] as AvailableCaptain[],
-  });
-
   const handleCreateTeam = async (data: CreateTeamData) => {
+    if (!user?.id) return;
+
     setCreateDialog((prev) => ({ ...prev, isLoading: true }));
     try {
-      console.log("Creating team with data:", data); // Debug log
-
-      // Validate user is logged in
-      if (!user?.id) {
-        throw new Error("User must be logged in to create a team");
-      }
-
-      // Prepare the team data according to the database schema
+      // Prepare the team data
       const teamData: Database["public"]["Tables"]["teams"]["Insert"] = {
         name: data.name,
         format: data.format,
@@ -248,58 +124,31 @@ export default function TeamsPage() {
         max_players: data.max_players,
         created_by: user.id,
         league_id: data.league_id || null,
-        status: data.status as Database["public"]["Enums"]["team_status_enum"],
+        status: data.status,
       };
 
-      console.log("Prepared team data:", teamData); // Debug log
-
       // Create the team
-      const { data: createdTeam, error: teamError } = await supabase
-        .from("teams")
-        .insert(teamData)
-        .select("*")
-        .single();
+      const { data: createdTeam, error: teamError } = await supabase.from("teams").insert(teamData).select().single();
 
-      if (teamError) {
-        console.error("Team creation error details:", {
-          code: teamError.code,
-          message: teamError.message,
-          details: teamError.details,
-          hint: teamError.hint,
-        });
-        throw new Error(`Failed to create team: ${teamError.message}`);
-      }
-
-      if (!createdTeam) {
-        throw new Error("No team data returned after creation");
-      }
-
-      console.log("Team created successfully:", createdTeam); // Debug log
+      if (teamError) throw teamError;
 
       // Refresh teams list
       await loadInitialData();
 
       toast({
         title: "Success",
-        description: "Team created successfully. Please assign a captain.",
+        description: "Team created successfully",
       });
       setCreateDialog((prev) => ({ ...prev, isOpen: false }));
 
       // Automatically open the captain dialog for the new team
       handleCaptainChange(createdTeam.id);
     } catch (error: any) {
-      console.error("Error creating team - Full error:", {
-        error,
-        message: error?.message,
-        details: error?.details,
-        hint: error?.hint,
-        stack: error?.stack,
-      });
-
+      console.error("Error creating team:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: error?.message || "Failed to create team. Please check the console for details.",
+        description: error?.message || "Failed to create team",
       });
     } finally {
       setCreateDialog((prev) => ({ ...prev, isLoading: false }));
@@ -333,9 +182,85 @@ export default function TeamsPage() {
     }
   };
 
-  if (loading) {
-    return <div>Loading...</div>;
-  }
+  const canCreateTeam = () => {
+    return (
+      userRole === "superuser" ||
+      userRole === "league_admin" ||
+      userRole === "league_secretary" ||
+      userRole === "team_captain"
+    );
+  };
+
+  const canManageSecretaries = (team: Team, userId: string, userRole: string | null) => {
+    return userRole === "superuser" || isTeamCaptain(team, userId);
+  };
+
+  const isTeamCaptain = (team: Team, userId: string) => {
+    return team.team_permissions?.some((p) => p.permission_type === "team_captain" && p.user_id === userId);
+  };
+
+  // Fetch user team memberships
+  useEffect(() => {
+    const fetchUserTeamMemberships = async () => {
+      if (!user?.id) return;
+
+      try {
+        const { data, error } = await supabase.from("team_players").select("team_id, league_id").eq("user_id", user.id);
+
+        if (error) throw error;
+
+        const memberships: Record<string, boolean> = {};
+        data.forEach((membership) => {
+          if (membership.team_id) memberships[membership.team_id] = true;
+          if (membership.league_id) memberships[membership.league_id] = true;
+        });
+
+        setUserTeamMemberships(memberships);
+      } catch (error) {
+        console.error("Error fetching user team memberships:", error);
+      }
+    };
+
+    fetchUserTeamMemberships();
+  }, [user?.id, supabase]);
+
+  // Memoize team cards to prevent unnecessary re-renders
+  const teamCards = useMemo(() => {
+    return filteredTeams.map((team) => (
+      <TeamCard
+        key={team.id}
+        team={team}
+        userRole={userRole}
+        onCaptainChange={handleCaptainChange}
+        onSecretaryChange={handleSecretaryChange}
+        canManageSecretaries={canManageSecretaries(team, user?.id || "", userRole)}
+        userId={user?.id || ""}
+        isTeamMember={!!userTeamMemberships[team.id]}
+        isInLeague={!!userTeamMemberships[team.league_id || ""]}
+      />
+    ));
+  }, [filteredTeams, userRole, userTeamMemberships, user?.id]);
+
+  const handleIconClick = () => {
+    setIsSearchVisible(true);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+  };
+
+  // Hide the search input when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (inputRef.current && !inputRef.current.contains(event.target as Node)) {
+        setIsSearchVisible(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -380,35 +305,9 @@ export default function TeamsPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filteredTeams.map((team) => (
-          <TeamCard
-            key={team.id}
-            team={team}
-            userRole={userRole}
-            onCaptainChange={handleCaptainChange}
-            onSecretaryChange={handleSecretaryChange}
-            canManageSecretaries={canManageSecretaries(team, user?.id || "", userRole)}
-            userId={user?.id || ""}
-          />
-        ))}
-      </div>
-
-      <CaptainDialog
-        isOpen={captainDialog.isOpen}
-        onOpenChange={(open) => setCaptainDialog((prev) => ({ ...prev, isOpen: open }))}
-        onSave={handleSaveCaptain}
-        availableCaptains={captainDialog.captains}
-        isLoading={captainDialog.isLoading}
-      />
-
-      <SecretaryDialog
-        isOpen={secretaryDialog.isOpen}
-        onOpenChange={(open) => setSecretaryDialog((prev) => ({ ...prev, isOpen: open }))}
-        onSave={handleSaveSecretary}
-        availableUsers={secretaryDialog.users}
-        isLoading={secretaryDialog.isLoading}
-      />
+      <Suspense fallback={<LoadingTeams />}>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{teamCards}</div>
+      </Suspense>
 
       <CreateTeamDialog
         isOpen={createDialog.isOpen}
@@ -417,6 +316,26 @@ export default function TeamsPage() {
         isSuperuser={userRole === "superuser"}
         availableCaptains={createDialog.availableCaptains}
         isLoading={createDialog.isLoading}
+      />
+
+      <CaptainDialog
+        isOpen={captainDialog.isOpen}
+        onOpenChange={(open) => setCaptainDialog((prev) => ({ ...prev, isOpen: open }))}
+        availableCaptains={captainDialog.captains}
+        isLoading={captainDialog.isLoading}
+        onSave={async (captainId) => {
+          // Implement captain save logic
+        }}
+      />
+
+      <SecretaryDialog
+        isOpen={secretaryDialog.isOpen}
+        onOpenChange={(open) => setSecretaryDialog((prev) => ({ ...prev, isOpen: open }))}
+        availableUsers={secretaryDialog.users}
+        isLoading={secretaryDialog.isLoading}
+        onSave={async (secretaryId) => {
+          // Implement secretary save logic
+        }}
       />
     </div>
   );
