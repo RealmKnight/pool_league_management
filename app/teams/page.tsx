@@ -32,6 +32,7 @@ export default function TeamsPage() {
   const supabase = createClientComponentClient<Database>();
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [userTeamMemberships, setUserTeamMemberships] = useState<Record<string, boolean>>({});
 
@@ -262,6 +263,74 @@ export default function TeamsPage() {
     };
   }, []);
 
+  const handleSaveCaptain = async (captainId: string) => {
+    if (!captainDialog.teamId) return;
+
+    try {
+      setCaptainDialog((prev) => ({ ...prev, isLoading: true }));
+
+      // Start a Supabase transaction
+      const { data, error } = await supabase.rpc("assign_team_captain", {
+        p_team_id: captainDialog.teamId,
+        p_user_id: captainId,
+      });
+
+      if (error) throw error;
+
+      // Refresh the team data
+      await loadInitialData();
+
+      toast({
+        title: "Success",
+        description: "Team captain assigned successfully",
+      });
+      setCaptainDialog((prev) => ({ ...prev, isOpen: false }));
+    } catch (error) {
+      console.error("Error assigning team captain:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to assign team captain",
+      });
+    } finally {
+      setCaptainDialog((prev) => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleSaveSecretary = async (secretaryId: string) => {
+    if (!secretaryDialog.teamId) return;
+
+    try {
+      setSecretaryDialog((prev) => ({ ...prev, isLoading: true }));
+
+      // Start a Supabase transaction
+      const { data, error } = await supabase.rpc("assign_team_secretary", {
+        p_team_id: secretaryDialog.teamId,
+        p_user_id: secretaryId,
+      });
+
+      if (error) throw error;
+
+      // Refresh the team data
+      await loadInitialData();
+
+      toast({
+        title: "Success",
+        description: "Team secretary assigned successfully",
+      });
+      setSecretaryDialog((prev) => ({ ...prev, isOpen: false }));
+    } catch (error) {
+      console.error("Error assigning team secretary:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to assign team secretary",
+      });
+    } finally {
+      setSecretaryDialog((prev) => ({ ...prev, isLoading: false }));
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center mb-4">
@@ -323,19 +392,16 @@ export default function TeamsPage() {
         onOpenChange={(open) => setCaptainDialog((prev) => ({ ...prev, isOpen: open }))}
         availableCaptains={captainDialog.captains}
         isLoading={captainDialog.isLoading}
-        onSave={async (captainId) => {
-          // Implement captain save logic
-        }}
+        onSave={handleSaveCaptain}
       />
 
       <SecretaryDialog
         isOpen={secretaryDialog.isOpen}
         onOpenChange={(open) => setSecretaryDialog((prev) => ({ ...prev, isOpen: open }))}
+        teamId={secretaryDialog.teamId}
         availableUsers={secretaryDialog.users}
         isLoading={secretaryDialog.isLoading}
-        onSave={async (secretaryId) => {
-          // Implement secretary save logic
-        }}
+        onSave={handleSaveSecretary}
       />
     </div>
   );

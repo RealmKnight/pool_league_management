@@ -20,9 +20,9 @@ import * as Icons from "@/components/icons";
 interface SecretaryDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  teamId: string;
+  teamId?: string | null;
   currentSecretaryId?: string | null;
-  onSave: () => void;
+  onSave: (secretaryId: string) => Promise<void>;
   availableUsers: AvailableCaptain[];
   isLoading: boolean;
 }
@@ -38,7 +38,6 @@ export function SecretaryDialog({
 }: SecretaryDialogProps) {
   const [selectedSecretaryId, setSelectedSecretaryId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const supabase = createClientComponentClient<Database>();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -52,21 +51,8 @@ export function SecretaryDialog({
 
     try {
       setIsSaving(true);
-
-      const { error } = await supabase.rpc("manage_team_secretary_role", {
-        p_team_id: teamId,
-        p_user_id: selectedSecretaryId,
-        p_previous_secretary_id: currentSecretaryId,
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: "Success",
-        description: "Team secretary updated successfully",
-      });
-
-      onSave();
+      await onSave(selectedSecretaryId);
+      setSelectedSecretaryId(null);
       onOpenChange(false);
     } catch (error: any) {
       console.error("Error updating secretary:", error);

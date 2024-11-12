@@ -24,9 +24,10 @@ interface ManagePlayerRoleProps {
   playerId: string;
   currentRole: PlayerPosition;
   onRoleUpdated?: () => void;
+  isOfficial?: boolean;
 }
 
-export function ManagePlayerRole({ teamId, playerId, currentRole, onRoleUpdated }: ManagePlayerRoleProps) {
+export function ManagePlayerRole({ teamId, playerId, currentRole, onRoleUpdated, isOfficial }: ManagePlayerRoleProps) {
   const [role, setRole] = useState<PlayerPosition>(currentRole);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
@@ -72,6 +73,15 @@ export function ManagePlayerRole({ teamId, playerId, currentRole, onRoleUpdated 
   }, [user, userRoles, teamId]);
 
   const handleRoleChange = async (newRole: PlayerPosition) => {
+    if (isOfficial) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Change Role",
+        description: "Team officials' roles must be managed through the team settings",
+      });
+      return;
+    }
+
     if (newRole === "remove") {
       setShowRemoveDialog(true);
       return;
@@ -137,6 +147,7 @@ export function ManagePlayerRole({ teamId, playerId, currentRole, onRoleUpdated 
         onChange={handleRoleChange}
         showAdminRoles={canAssignAdminRoles}
         canRemovePlayer={canRemovePlayer}
+        disabled={isOfficial}
       />
 
       <AlertDialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
