@@ -54,9 +54,12 @@ export function ManagePlayerRole({ teamId, playerId, currentRole, onRoleUpdated,
         .select("permission_type")
         .eq("team_id", teamId)
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error checking permissions:", error);
+        return false;
+      }
 
       return data?.permission_type === "team_captain";
     } catch (error) {
@@ -69,7 +72,12 @@ export function ManagePlayerRole({ teamId, playerId, currentRole, onRoleUpdated,
   const [canRemovePlayer, setCanRemovePlayer] = useState(false);
 
   useEffect(() => {
-    checkPermissions().then(setCanRemovePlayer);
+    const loadPermissions = async () => {
+      const hasPermission = await checkPermissions();
+      setCanRemovePlayer(hasPermission);
+    };
+
+    loadPermissions();
   }, [user, userRoles, teamId]);
 
   const handleRoleChange = async (newRole: PlayerPosition) => {
