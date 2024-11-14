@@ -47,13 +47,30 @@ export function SecretaryDialog({
   }, [isOpen]);
 
   const handleSave = async () => {
-    if (!selectedSecretaryId) return;
+    if (!selectedSecretaryId || !teamId) return;
 
     try {
       setIsSaving(true);
+
+      const supabase = createClientComponentClient<Database>();
+
+      // Update both permissions and user role
+      await supabase.rpc("manage_team_secretary", {
+        p_team_id: teamId,
+        p_user_id: selectedSecretaryId,
+      });
+
+      // Update user's role
+      await supabase.from("users").update({ role: "team_secretary" }).eq("id", selectedSecretaryId);
+
       await onSave(selectedSecretaryId);
       setSelectedSecretaryId(null);
       onOpenChange(false);
+
+      toast({
+        title: "Success",
+        description: "Team secretary updated successfully",
+      });
     } catch (error: any) {
       console.error("Error updating secretary:", error);
       toast({

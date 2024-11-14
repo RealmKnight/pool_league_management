@@ -26,6 +26,13 @@ export type Database = {
         };
         Returns: void;
       };
+      manage_team_captain: {
+        Args: {
+          p_team_id: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       [_ in never]: never;
@@ -933,6 +940,13 @@ export type Database = {
         };
         Returns: undefined;
       };
+      manage_team_captain: {
+        Args: {
+          p_team_id: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       game_format_enum: "8-Ball" | "9-Ball" | "10-Ball" | "Straight Pool" | "One Pocket" | "Bank Pool";
@@ -946,7 +960,7 @@ export type Database = {
       player_position_enum: "player" | "substitute" | "reserve" | "team_captain" | "team_secretary";
       player_status_enum: "active" | "inactive" | "suspended";
       team_status_enum: "active" | "inactive" | "pending";
-      user_role: "superuser" | "league_admin" | "league_secretary" | "team_captain" | "team_secretary" | "player";
+      user_role: "player" | "superuser" | "league_admin" | "league_secretary" | "team_captain" | "team_secretary";
     };
     CompositeTypes: {
       [_ in never]: never;

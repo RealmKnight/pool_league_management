@@ -1,53 +1,95 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
 
+type UserWithRole = Database["public"]["Tables"]["users"]["Row"] & {
+  role: Database["public"]["Enums"]["user_role"];
+};
+
+type UserRole = Database["public"]["Enums"]["user_role"];
+
+const ROLE_HIERARCHY = {
+  superuser: ["league_admin", "league_secretary", "team_captain", "team_secretary", "player"],
+  league_admin: ["league_secretary", "team_captain", "team_secretary", "player"],
+  league_secretary: ["team_secretary", "player"],
+  team_captain: ["player"],
+  team_secretary: ["player"],
+  player: [],
+} as const;
+
 export function useUser() {
-  const supabase = createClientComponentClient<Database>();
-  const [user, setUser] = useState<any>(null);
-  const [userRoles, setUserRoles] = useState<string[]>([]);
+  const [user, setUser] = useState<UserWithRole | null>(null);
+  const [userRoles, setUserRoles] = useState<UserRole[]>([]);
   const [loading, setLoading] = useState(true);
+  const supabase = createClientComponentClient<Database>();
+  const fetchedRef = useRef(false);
 
   useEffect(() => {
-    async function fetchUserAndRoles() {
+    const fetchUser = async () => {
       try {
-        // Get current user
         const {
-          data: { user: currentUser },
-        } = await supabase.auth.getUser();
+          data: { session },
+        } = await supabase.auth.getSession();
 
-        if (!currentUser) {
+        if (!session?.user?.id || fetchedRef.current) {
           setLoading(false);
           return;
         }
 
-        // Fetch user permissions from league_permissions table
-        const { data: leaguePermissions, error: leagueError } = await supabase
-          .from("league_permissions")
-          .select("permission_type")
-          .eq("user_id", currentUser.id);
+        // Get user data with role in a single query
+        const { data: userData, error: userError } = await supabase
+          .from("users")
+          .select("*, role")
+          .eq("id", session.user.id)
+          .single();
 
-        if (leagueError) throw leagueError;
+        if (userError) throw userError;
 
-        // Convert permissions to roles
-        const roles = leaguePermissions?.map((p) => p.permission_type) || [];
+        // Set user data
+        setUser(userData as UserWithRole);
 
-        // Add superuser if user has the role in their metadata
-        if (currentUser.user_metadata?.role === "superuser") {
-          roles.push("superuser");
-        }
+        // Calculate inherited roles
+        const baseRole = userData.role as keyof typeof ROLE_HIERARCHY;
+        const inheritedRoles = ROLE_HIERARCHY[baseRole] || [];
+        const allRoles = [baseRole, ...inheritedRoles] as UserRole[];
 
-        setUser(currentUser);
-        setUserRoles(roles);
+        setUserRoles(allRoles);
+        fetchedRef.current = true;
       } catch (error) {
-        console.error("Error fetching user and roles:", error);
+        console.error("Error fetching user:", error);
+        // Set default role if there's an error
+        setUserRoles(["player"]);
       } finally {
         setLoading(false);
       }
-    }
+    };
 
-    fetchUserAndRoles();
+    fetchUser();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        setUser(null);
+        setUserRoles([]);
+        fetchedRef.current = false;
+      } else if (event === "SIGNED_IN") {
+        fetchUser();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [supabase]);
 
-  return { user, userRoles, loading };
+  return {
+    user,
+    userRoles,
+    loading,
+    isAdmin: userRoles.includes("league_admin") || userRoles.includes("superuser"),
+    isSecretary: userRoles.includes("league_secretary"),
+    isCaptain: userRoles.includes("team_captain"),
+    isTeamSecretary: userRoles.includes("team_secretary"),
+  };
 }

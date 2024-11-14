@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { PlayerRoleSelect } from "./player-role-select";
 import type { Database } from "@/lib/database.types";
@@ -16,76 +16,51 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { usePermissions } from "@/hooks/use-permissions";
 
 type PlayerPosition = Database["public"]["Enums"]["player_position_enum"] | "remove";
 
 interface ManagePlayerRoleProps {
   teamId: string;
   playerId: string;
+  userId: string;
   currentRole: PlayerPosition;
   onRoleUpdated?: () => void;
   isOfficial?: boolean;
 }
 
-export function ManagePlayerRole({ teamId, playerId, currentRole, onRoleUpdated, isOfficial }: ManagePlayerRoleProps) {
+export function ManagePlayerRole({
+  teamId,
+  playerId,
+  userId,
+  currentRole,
+  onRoleUpdated,
+  isOfficial,
+}: ManagePlayerRoleProps) {
   const [role, setRole] = useState<PlayerPosition>(currentRole);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
-  const { user, userRoles } = useUser();
+  const { user, userRoles, isAdmin } = useUser();
   const { toast } = useToast();
   const supabase = createClientComponentClient<Database>();
+  const { hasPermission } = usePermissions();
 
-  // Check if user can assign admin roles
-  const canAssignAdminRoles = userRoles?.some((role) => role === "superuser" || role === "league_admin");
+  const canAssignAdminRoles = useMemo(
+    () => userRoles?.includes("superuser") || userRoles?.includes("league_admin"),
+    [userRoles]
+  );
 
-  // Check if user can remove players based on both global roles and team permissions
-  const checkPermissions = async () => {
-    if (!user) return false;
-
-    // First check global roles
-    if (userRoles?.some((role) => ["superuser", "league_admin", "league_secretary"].includes(role))) {
-      return true;
-    }
-
-    // Then check team-specific permissions
-    try {
-      const { data, error } = await supabase
-        .from("team_permissions")
-        .select("permission_type")
-        .eq("team_id", teamId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (error) {
-        console.error("Error checking permissions:", error);
-        return false;
-      }
-
-      return data?.permission_type === "team_captain";
-    } catch (error) {
-      console.error("Error checking permissions:", error);
-      return false;
-    }
-  };
-
-  // Use effect to check permissions when component mounts
-  const [canRemovePlayer, setCanRemovePlayer] = useState(false);
-
-  useEffect(() => {
-    const loadPermissions = async () => {
-      const hasPermission = await checkPermissions();
-      setCanRemovePlayer(hasPermission);
-    };
-
-    loadPermissions();
-  }, [user, userRoles, teamId]);
+  const canRemovePlayer = useMemo(
+    () => hasPermission("team_captain") || canAssignAdminRoles,
+    [hasPermission, canAssignAdminRoles]
+  );
 
   const handleRoleChange = async (newRole: PlayerPosition) => {
-    if (isOfficial) {
+    if (isOfficial && !isAdmin) {
       toast({
         variant: "destructive",
         title: "Cannot Change Role",
-        description: "Team officials' roles must be managed through the team settings",
+        description: "Only superusers and league admins can modify team officials' roles",
       });
       return;
     }
@@ -98,9 +73,34 @@ export function ManagePlayerRole({ teamId, playerId, currentRole, onRoleUpdated,
     try {
       setIsUpdating(true);
 
-      const { error } = await supabase.from("team_players").update({ position: newRole }).eq("id", playerId);
+      const updateRole = async () => {
+        if (isOfficial || newRole === "team_captain" || newRole === "team_secretary") {
+          await supabase
+            .from("team_permissions")
+            .delete()
+            .eq("team_id", teamId)
+            .eq("user_id", userId)
+            .in("permission_type", ["team_captain", "team_secretary"]);
 
-      if (error) throw error;
+          if (newRole === "team_captain" || newRole === "team_secretary") {
+            await supabase.from("team_permissions").insert({
+              team_id: teamId,
+              user_id: userId,
+              permission_type: newRole,
+            });
+
+            await supabase.from("users").update({ role: newRole }).eq("id", userId);
+          } else {
+            await supabase.from("users").update({ role: "player" }).eq("id", userId);
+          }
+        }
+
+        const { error } = await supabase.from("team_players").update({ position: newRole }).eq("id", playerId);
+
+        if (error) throw error;
+      };
+
+      await updateRole();
 
       setRole(newRole);
       onRoleUpdated?.();
@@ -155,7 +155,7 @@ export function ManagePlayerRole({ teamId, playerId, currentRole, onRoleUpdated,
         onChange={handleRoleChange}
         showAdminRoles={canAssignAdminRoles}
         canRemovePlayer={canRemovePlayer}
-        disabled={isOfficial}
+        disabled={isOfficial && !isAdmin}
       />
 
       <AlertDialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>

@@ -45,3 +45,21 @@ export type AvailableCaptain = {
   first_name: string | null;
   last_name: string | null;
 };
+
+export type TeamPlayer = Database["public"]["Tables"]["team_players"]["Row"] & {
+  users: {
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+  } | null;
+  team_permissions?: {
+    id: string;
+    user_id: string;
+    permission_type: string;
+    created_at: string;
+    users: {
+      first_name: string | null;
+      last_name: string | null;
+    };
+  }[];
+};

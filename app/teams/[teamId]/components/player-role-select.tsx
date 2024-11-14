@@ -9,6 +9,7 @@ interface PlayerRoleSelectProps {
   onChange: (value: PlayerPosition) => void;
   showAdminRoles?: boolean;
   canRemovePlayer?: boolean;
+  disabled?: boolean;
 }
 
 export function PlayerRoleSelect({
@@ -16,9 +17,10 @@ export function PlayerRoleSelect({
   onChange,
   showAdminRoles = false,
   canRemovePlayer = false,
+  disabled = false,
 }: PlayerRoleSelectProps) {
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger>
         <SelectValue placeholder="Select role" />
       </SelectTrigger>

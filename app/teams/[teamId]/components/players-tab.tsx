@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { Team } from "@/app/teams/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ManagePlayerRole } from "./manage-player-role";
@@ -8,6 +8,7 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
 import { Badge } from "@/components/ui/badge";
 import { useUser } from "@/hooks/use-user";
+import { usePermissions } from "@/hooks/use-permissions";
 
 interface PlayersTabProps {
   team: Team;
@@ -34,83 +35,21 @@ type TeamOfficial = {
 
 export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
   const [players, setPlayers] = useState<TeamPlayer[]>([]);
-  const [officials, setOfficials] = useState<TeamOfficial[]>([]);
+  const { user, userRoles, isAdmin, isSecretary, isCaptain } = useUser();
+  const { hasPermission } = usePermissions();
   const supabase = createClientComponentClient<Database>();
-  const { user, userRoles } = useUser();
+  const fetchedRef = useRef(false);
 
-  const canManagePlayers = () => {
-    if (!user || !userRoles) return false;
+  const canManagePlayers = useMemo(() => {
+    if (!user) return false;
+    return isAdmin || isSecretary || isCaptain || hasPermission("team_captain") || hasPermission("team_secretary");
+  }, [user, isAdmin, isSecretary, isCaptain, hasPermission]);
 
-    if (userRoles.some((role) => ["superuser", "league_admin", "league_secretary"].includes(role))) {
-      return true;
-    }
-
-    return (
-      team.team_permissions?.some(
-        (permission) =>
-          permission.user_id === user.id && ["team_captain", "team_secretary"].includes(permission.permission_type)
-      ) ?? false
-    );
-  };
-
-  const sortPlayers = (players: TeamPlayer[]) => {
-    return players.sort((a, b) => {
-      // Get team roles for both players
-      const roleA = getTeamRole(a);
-      const roleB = getTeamRole(b);
-
-      // Define role priority (only team roles, not RBAC roles)
-      const rolePriority: { [key: string]: number } = {
-        team_captain: 1,
-        team_secretary: 2,
-        player: 3,
-        substitute: 4,
-        reserve: 5,
-      };
-
-      // Get priority for each role (default to highest number if role not found)
-      const priorityA = rolePriority[roleA || ""] || 999;
-      const priorityB = rolePriority[roleB || ""] || 999;
-
-      // Sort by role priority first
-      if (priorityA !== priorityB) {
-        return priorityA - priorityB;
-      }
-
-      // If roles are the same, sort by name
-      const nameA = `${a.users?.first_name} ${a.users?.last_name}`.toLowerCase();
-      const nameB = `${b.users?.first_name} ${b.users?.last_name}`.toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
-  };
-
-  // Initial load and update when team changes
   useEffect(() => {
-    const loadTeamMembers = async () => {
+    const loadTeamData = async () => {
+      if (fetchedRef.current || !team.id) return;
+
       try {
-        // Fetch team officials first
-        const { data: officialsData, error: officialsError } = await supabase
-          .from("team_permissions")
-          .select(
-            `
-            id,
-            user_id,
-            permission_type,
-            users (
-              id,
-              first_name,
-              last_name,
-              email
-            )
-          `
-          )
-          .eq("team_id", team.id)
-          .in("permission_type", ["team_captain", "team_secretary"]);
-
-        if (officialsError) throw officialsError;
-        setOfficials(officialsData as TeamOfficial[]);
-
-        // Get all players including officials
         const { data: playersData, error: playersError } = await supabase
           .from("team_players")
           .select(
@@ -120,7 +59,7 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
             jersey_number,
             position,
             status,
-            users (
+            users!inner (
               id,
               first_name,
               last_name,
@@ -128,20 +67,57 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
             )
           `
           )
-          .eq("team_id", team.id);
+          .eq("team_id", team.id)
+          .order("position");
 
         if (playersError) throw playersError;
 
-        // Sort the players before setting state
-        const sortedPlayers = sortPlayers(playersData as TeamPlayer[]);
-        setPlayers(sortedPlayers);
+        const transformedPlayers =
+          playersData?.map((player) => ({
+            ...player,
+            team_permissions: team.team_permissions?.filter((p) => p.user_id === player.user_id) || [],
+          })) || [];
+
+        setPlayers(sortPlayers(transformedPlayers));
+        fetchedRef.current = true;
       } catch (error) {
-        console.error("Error loading team members:", error);
+        console.error("Error loading team data:", error);
+        setPlayers([]);
       }
     };
 
-    loadTeamMembers();
-  }, [team.id, supabase]);
+    loadTeamData();
+
+    return () => {
+      fetchedRef.current = false;
+    };
+  }, [team.id, team.team_permissions, supabase]);
+
+  const sortPlayers = useCallback((players: TeamPlayer[]) => {
+    return players.sort((a, b) => {
+      const roleA = getTeamRole(a);
+      const roleB = getTeamRole(b);
+
+      const rolePriority: { [key: string]: number } = {
+        team_captain: 1,
+        team_secretary: 2,
+        player: 3,
+        substitute: 4,
+        reserve: 5,
+      };
+
+      const priorityA = rolePriority[roleA || ""] || 999;
+      const priorityB = rolePriority[roleB || ""] || 999;
+
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+
+      return `${a.users?.first_name} ${a.users?.last_name}`.localeCompare(
+        `${b.users?.first_name} ${b.users?.last_name}`
+      );
+    });
+  }, []);
 
   const refreshPlayers = async () => {
     try {
@@ -216,7 +192,7 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
         ? "secondary"
         : role === "substitute"
         ? "outline"
-        : "ghost";
+        : "destructive";
 
     // Format the display text
     const displayText =
@@ -238,10 +214,9 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Jersey Number</TableHead>
-            <TableHead>Position</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Team Role</TableHead>
-            {canManagePlayers() && <TableHead>Actions</TableHead>}
+            {canManagePlayers && <TableHead>Actions</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -253,14 +228,14 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
                   {player.users?.first_name} {player.users?.last_name}
                 </TableCell>
                 <TableCell>{player.jersey_number || "N/A"}</TableCell>
-                <TableCell>{player.position || "N/A"}</TableCell>
                 <TableCell>{player.status}</TableCell>
                 <TableCell>{renderRoleBadge(teamRole)}</TableCell>
-                {canManagePlayers() && (
+                {canManagePlayers && (
                   <TableCell>
                     <ManagePlayerRole
                       teamId={team.id}
                       playerId={player.id}
+                      userId={player.user_id}
                       currentRole={player.position || "player"}
                       onRoleUpdated={refreshPlayers}
                       isOfficial={team.team_permissions?.some(

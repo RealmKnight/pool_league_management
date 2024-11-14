@@ -37,11 +37,16 @@ export default function TeamsPage() {
   const [userTeamMemberships, setUserTeamMemberships] = useState<Record<string, boolean>>({});
 
   // Dialog states
-  const [captainDialog, setCaptainDialog] = useState({
+  const [captainDialog, setCaptainDialog] = useState<{
+    isOpen: boolean;
+    teamId: string | null;
+    isLoading: boolean;
+    captains: AvailableCaptain[];
+  }>({
     isOpen: false,
-    teamId: null as string | null,
+    teamId: null,
     isLoading: false,
-    captains: [] as AvailableCaptain[],
+    captains: [],
   });
 
   const [secretaryDialog, setSecretaryDialog] = useState({
@@ -263,37 +268,61 @@ export default function TeamsPage() {
     };
   }, []);
 
-  const handleSaveCaptain = async (captainId: string) => {
+  const handleCaptainSave = async (captainId: string) => {
     if (!captainDialog.teamId) return;
 
     try {
-      setCaptainDialog((prev) => ({ ...prev, isLoading: true }));
+      setIsUpdating(true);
 
-      // Start a Supabase transaction
-      const { data, error } = await supabase.rpc("assign_team_captain", {
+      // Start a transaction
+      const { data: currentCaptain } = await supabase
+        .from("team_permissions")
+        .select("user_id")
+        .eq("team_id", captainDialog.teamId)
+        .eq("permission_type", "team_captain")
+        .single();
+
+      // 1. Update team permissions using RPC function
+      const { error: captainError } = await supabase.rpc("manage_team_captain", {
         p_team_id: captainDialog.teamId,
         p_user_id: captainId,
       });
 
-      if (error) throw error;
+      if (captainError) throw captainError;
 
-      // Refresh the team data
+      // 2. Update new captain's role in public.users table
+      const { error: newCaptainError } = await supabase
+        .from("users")
+        .update({ role: "team_captain" })
+        .eq("id", captainId);
+
+      if (newCaptainError) throw newCaptainError;
+
+      // 3. Update previous captain's role to player if exists
+      if (currentCaptain?.user_id && currentCaptain.user_id !== captainId) {
+        const { error: prevCaptainError } = await supabase
+          .from("users")
+          .update({ role: "player" })
+          .eq("id", currentCaptain.user_id);
+
+        if (prevCaptainError) throw prevCaptainError;
+      }
+
       await loadInitialData();
 
       toast({
         title: "Success",
-        description: "Team captain assigned successfully",
+        description: "Team captain updated successfully",
       });
-      setCaptainDialog((prev) => ({ ...prev, isOpen: false }));
     } catch (error) {
-      console.error("Error assigning team captain:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to assign team captain",
-      });
+      handleError(error, "Failed to update team captain");
     } finally {
-      setCaptainDialog((prev) => ({ ...prev, isLoading: false }));
+      setIsUpdating(false);
+      setCaptainDialog((prev) => ({
+        ...prev,
+        isOpen: false,
+        isLoading: false,
+      }));
     }
   };
 
@@ -303,31 +332,50 @@ export default function TeamsPage() {
     try {
       setSecretaryDialog((prev) => ({ ...prev, isLoading: true }));
 
-      // Start a Supabase transaction
-      const { data, error } = await supabase.rpc("assign_team_secretary", {
+      // Start a transaction
+      const { data: currentSecretary } = await supabase
+        .from("team_permissions")
+        .select("user_id")
+        .eq("team_id", secretaryDialog.teamId)
+        .eq("permission_type", "team_secretary")
+        .single();
+
+      // 1. Update team permissions using RPC function
+      const { error: secretaryError } = await supabase.rpc("manage_team_secretary", {
         p_team_id: secretaryDialog.teamId,
         p_user_id: secretaryId,
       });
 
-      if (error) throw error;
+      if (secretaryError) throw secretaryError;
 
-      // Refresh the team data
+      // 2. Update new secretary's role in public.users table
+      const { error: newSecretaryError } = await supabase
+        .from("users")
+        .update({ role: "team_secretary" })
+        .eq("id", secretaryId);
+
+      if (newSecretaryError) throw newSecretaryError;
+
+      // 3. Update previous secretary's role to player if exists
+      if (currentSecretary?.user_id && currentSecretary.user_id !== secretaryId) {
+        const { error: prevSecretaryError } = await supabase
+          .from("users")
+          .update({ role: "player" })
+          .eq("id", currentSecretary.user_id);
+
+        if (prevSecretaryError) throw prevSecretaryError;
+      }
+
       await loadInitialData();
 
       toast({
         title: "Success",
-        description: "Team secretary assigned successfully",
+        description: "Team secretary updated successfully",
       });
-      setSecretaryDialog((prev) => ({ ...prev, isOpen: false }));
     } catch (error) {
-      console.error("Error assigning team secretary:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to assign team secretary",
-      });
+      handleError(error, "Failed to update team secretary");
     } finally {
-      setSecretaryDialog((prev) => ({ ...prev, isLoading: false }));
+      setSecretaryDialog((prev) => ({ ...prev, isLoading: false, isOpen: false }));
     }
   };
 
@@ -390,9 +438,10 @@ export default function TeamsPage() {
       <CaptainDialog
         isOpen={captainDialog.isOpen}
         onOpenChange={(open) => setCaptainDialog((prev) => ({ ...prev, isOpen: open }))}
+        teamId={captainDialog.teamId}
         availableCaptains={captainDialog.captains}
         isLoading={captainDialog.isLoading}
-        onSave={handleSaveCaptain}
+        onSave={handleCaptainSave}
       />
 
       <SecretaryDialog

@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Trophy, Users, Calendar, Activity } from "lucide-react";
 import Link from "next/link";
+import { useUser } from "@/hooks/use-user";
 
-type UserProfile = Database["public"]["Tables"]["users"]["Row"];
 type UserTeam = {
   id: string;
   name: string;
@@ -30,102 +30,94 @@ type NextMatch = {
 };
 
 export default function DashboardPage() {
-  const { user } = useAuth();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const { user: authUser } = useAuth();
+  const { user: profile, loading: profileLoading } = useUser();
   const [teams, setTeams] = useState<UserTeam[]>([]);
   const [nextMatch, setNextMatch] = useState<NextMatch | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClientComponentClient<Database>();
 
-  useEffect(() => {
-    async function loadData() {
-      if (!user?.id) {
-        setLoading(false);
-        return;
-      }
+  const fetchTeamsAndMatches = useCallback(async () => {
+    if (!authUser?.id) return;
 
-      try {
-        // Fetch user profile
-        const { data: profileData, error: profileError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", user.id)
-          .single();
+    try {
+      // Fetch user's teams in a single query with all needed relations
+      const { data: teamData, error: teamError } = await supabase
+        .from("team_players")
+        .select(
+          `
+          team_id,
+          position,
+          teams!inner (
+            id,
+            name,
+            league:league_id (
+              id,
+              name
+            )
+          )
+        `
+        )
+        .eq("user_id", authUser.id)
+        .eq("status", "active");
 
-        if (profileError) throw profileError;
-        setProfile(profileData);
+      if (teamError) throw teamError;
 
-        // Fetch user's teams
-        const { data: teamData, error: teamError } = await supabase
-          .from("team_players")
+      const formattedTeams = teamData.map((tp) => ({
+        id: tp.teams?.id || "",
+        name: tp.teams?.name || "",
+        position: tp.position || "player",
+        league: tp.teams?.league || null,
+      }));
+
+      setTeams(formattedTeams);
+
+      // Fetch next match if user has teams
+      if (formattedTeams.length > 0) {
+        const teamIds = formattedTeams.map((t) => t.id).join(",");
+        const today = new Date().toISOString();
+
+        const { data: matchData, error: matchError } = await supabase
+          .from("matches")
           .select(
             `
-            team_id,
-            position,
-            teams (
-              id,
-              name,
-              league:league_id (
-                name
-              )
+            match_date,
+            venue,
+            home_team:teams!matches_home_team_id_fkey (
+              name
+            ),
+            away_team:teams!matches_away_team_id_fkey (
+              name
             )
           `
           )
-          .eq("user_id", user.id)
-          .eq("status", "active");
+          .or(`home_team_id.in.(${teamIds}),away_team_id.in.(${teamIds})`)
+          .gte("match_date", today)
+          .order("match_date")
+          .limit(1)
+          .maybeSingle();
 
-        if (teamError) throw teamError;
-
-        const formattedTeams = teamData.map((tp) => ({
-          id: tp.teams?.id || "",
-          name: tp.teams?.name || "",
-          position: tp.position || "player",
-          league: tp.teams?.league || null,
-        }));
-
-        setTeams(formattedTeams);
-
-        // Fetch next match if user has teams
-        if (teamData.length > 0) {
-          const teamIds = teamData.map((t) => t.teams?.id).filter(Boolean);
-
-          const { data: matchData, error: matchError } = await supabase
-            .from("matches")
-            .select(
-              `
-              match_date,
-              venue,
-              home_team:teams!matches_home_team_id_fkey(name),
-              away_team:teams!matches_away_team_id_fkey(name)
-            `
-            )
-            .or(`home_team_id.in.(${teamIds.join(",")}),away_team_id.in.(${teamIds.join(",")})`)
-            .gte("match_date", new Date().toISOString())
-            .order("match_date", { ascending: true })
-            .limit(1)
-            .single();
-
-          if (!matchError && matchData) {
-            const formattedMatch: NextMatch = {
-              match_date: matchData.match_date,
-              venue: matchData.venue,
-              homeTeam: matchData.home_team,
-              awayTeam: matchData.away_team,
-            };
-            setNextMatch(formattedMatch);
-          }
+        if (!matchError && matchData) {
+          setNextMatch({
+            match_date: matchData.match_date,
+            venue: matchData.venue,
+            homeTeam: matchData.home_team,
+            awayTeam: matchData.away_team,
+          });
         }
-      } catch (error) {
-        console.error("Error loading dashboard data:", error);
-      } finally {
-        setLoading(false);
       }
+    } catch (error) {
+      console.error("Error loading dashboard data:", error);
+    } finally {
+      setLoading(false);
     }
+  }, [authUser?.id, supabase]);
 
-    loadData();
-  }, [user, supabase]);
+  useEffect(() => {
+    fetchTeamsAndMatches();
+  }, [fetchTeamsAndMatches]);
 
-  const getDisplayName = () => {
+  const getDisplayName = useCallback(() => {
     if (profile?.use_nickname && profile?.nickname) {
       return profile.nickname;
     }
@@ -135,21 +127,20 @@ export default function DashboardPage() {
     if (profile?.full_name) {
       return profile.full_name;
     }
-    return user?.email?.split("@")[0] || "Guest";
-  };
+    return authUser?.email?.split("@")[0] || "Guest";
+  }, [profile, authUser]);
 
-  const formatMatchDate = (dateString: string) => {
-    const date = new Date(dateString);
+  const formatMatchDate = useCallback((dateString: string) => {
     return new Intl.DateTimeFormat("en-US", {
       weekday: "short",
       month: "short",
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
-    }).format(date);
-  };
+    }).format(new Date(dateString));
+  }, []);
 
-  if (loading) {
+  if (loading || profileLoading) {
     return <div>Loading...</div>;
   }
 
