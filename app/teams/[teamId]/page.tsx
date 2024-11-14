@@ -14,6 +14,7 @@ import type { Team } from "@/app/teams/types";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/hooks/use-user";
 import { AddPlayerDialog } from "./components/add-player-dialog";
+import { PlusIcon } from "@radix-ui/react-icons";
 
 export default function TeamPage() {
   const params = useParams();
@@ -83,51 +84,14 @@ export default function TeamPage() {
     fetchTeam();
   }, [teamId, supabase]);
 
-  const handlePlayerAdded = async () => {
-    if (!teamId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from("teams")
-        .select(
-          `
-          *,
-          team_permissions!team_permissions_team_id_fkey (
-            id,
-            user_id,
-            permission_type,
-            created_at,
-            users:user_id (
-              first_name,
-              last_name
-            )
-          ),
-          team_players (
-            id,
-            user_id,
-            jersey_number,
-            position,
-            status,
-            users (
-              first_name,
-              last_name,
-              email
-            )
-          ),
-          league:league_id (
-            id,
-            name,
-            game_format
-          )
-        `
-        )
-        .eq("id", teamId)
-        .single();
-
-      if (error) throw error;
-      setTeam(data as Team);
-    } catch (error) {
-      console.error("Error refreshing team data:", error);
+  const handlePlayerAdded = () => {
+    setIsAddPlayerDialogOpen(false);
+    if (activeTab === "players") {
+      const playersTabElement = document.querySelector('[data-tab="players"]');
+      if (playersTabElement) {
+        const event = new CustomEvent("refreshPlayers");
+        playersTabElement.dispatchEvent(event);
+      }
     }
   };
 
@@ -202,7 +166,7 @@ export default function TeamPage() {
 
         <TabsContent value="players">
           <Card className="p-6">
-            <PlayersTab team={team} />
+            <PlayersTab team={team} data-tab="players" />
           </Card>
         </TabsContent>
       </Tabs>
@@ -210,11 +174,7 @@ export default function TeamPage() {
       <AddPlayerDialog
         teamId={team.id}
         isOpen={isAddPlayerDialogOpen}
-        onClose={() => {
-          setIsAddPlayerDialogOpen(false);
-          // Remove query parameters when closing dialog
-          window.history.replaceState({}, "", `/teams/${teamId}`);
-        }}
+        onOpenChange={setIsAddPlayerDialogOpen}
         onPlayerAdded={handlePlayerAdded}
       />
     </div>
