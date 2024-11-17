@@ -5,17 +5,16 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { toast, useToast } from "@/hooks/use-toast";
 import { Plus, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { TeamCard } from "@/app/teams/components/team-card";
-import { useTeams } from "@/app/teams/hooks/use-teams";
-import type { Team } from "@/app/teams/types";
-import { CaptainDialog } from "@/app/teams/components/captain-dialog";
-import { SecretaryDialog } from "@/app/teams/components/secretary-dialog";
-import type { AvailableCaptain } from "@/app/teams/types";
-import { CreateTeamDialog, type CreateTeamData } from "@/app/teams/components/create-team-dialog";
-import { LoadingTeams } from "./components/loading-teams";
+import { TeamCard } from "@/components/team/team-card";
+import { useTeams } from "@/hooks/use-teams";
+import type { Team, AvailableCaptain } from "@/types/teams";
+import { CaptainDialog } from "@/components/team/captain-dialog";
+import { SecretaryDialog } from "@/components/team/secretary-dialog";
+import { CreateTeamDialog, type CreateTeamData } from "@/components/team/create-team-dialog";
+import { LoadingTeams } from "@/components/team/loading-teams";
 
 const handleError = (error: unknown, message: string) => {
   console.error(error);
@@ -63,12 +62,24 @@ export default function TeamsPage() {
   });
 
   // Use the custom hook
-  const { teams, filteredTeams, loading, userRole, loadInitialData, handleSearch } = useTeams(user?.id);
+  const { teams, filteredTeams, loading, error, userRole, loadInitialData, handleSearch } = useTeams(user?.id);
 
   // Initial data loading
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
+
+  // If there's an error, show it
+  useEffect(() => {
+    if (error instanceof Error) {
+      console.error(error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load teams data",
+      });
+    }
+  }, [error, toast]);
 
   // Handler functions
   const handleCaptainChange = async (teamId: string) => {

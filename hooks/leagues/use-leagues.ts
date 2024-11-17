@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
-import type { League } from "../types";
+import type { League } from "@/app/leagues/types";
 import { useToast } from "@/hooks/use-toast";
 
 export const useLeagues = (userId: string | undefined) => {

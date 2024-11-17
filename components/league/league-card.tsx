@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Users, Calendar, Trophy } from "lucide-react";
-import type { League } from "../types";
+import type { League } from "@/app/leagues/types";
 import { useRouter } from "next/navigation";
 
 interface LeagueCardProps {

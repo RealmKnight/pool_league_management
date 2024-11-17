@@ -9,11 +9,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { League } from "../types";
 import { useSearchParams } from "next/navigation";
-import { LoadingState } from "../components/loading-state";
-import { ErrorState } from "../components/error-state";
-import { TeamsTab } from "../components/teams-tab";
-import { ScheduleTab } from "../components/schedule-tab";
-import { StandingsTab } from "../components/standings-tab";
+import { LoadingState } from "@/components/shared/loading-state";
+import { ErrorState } from "@/components/shared/error-state";
+import { TeamsTab } from "@/components/league/teams-tab";
+import { ScheduleTab } from "@/components/league/schedule-tab";
+import { StandingsTab } from "@/components/league/standings-tab";
 import { formatLeagueFormat } from "../utils/format-strings";
 
 export default function LeaguePage() {

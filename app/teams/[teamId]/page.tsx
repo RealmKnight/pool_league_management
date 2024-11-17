@@ -6,14 +6,14 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import type { Database } from "@/lib/database.types";
-import { OverviewTab } from "./components/overview-tab";
-import { ScheduleTab } from "../components/schedule-tab";
-import { StandingsTab } from "./components/standings-tab";
-import { PlayersTab } from "./components/players-tab";
+import { OverviewTab } from "@/components/teamId/overview-tab";
+import { ScheduleTab } from "@/components/team/schedule-tab";
+import { StandingsTab } from "@/components/teamId/standings-tab";
+import { PlayersTab } from "@/components/teamId/players-tab";
 import type { Team } from "@/app/teams/types";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/hooks/use-user";
-import { AddPlayerDialog } from "./components/add-player-dialog";
+import { AddPlayerDialog } from "@/components/teamId/add-player-dialog";
 import { PlusIcon } from "@radix-ui/react-icons";
 
 export default function TeamPage() {

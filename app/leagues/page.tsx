@@ -8,13 +8,13 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { LeagueCard } from "./components/league-card";
-import { useLeagues } from "./hooks/use-leagues";
+import { LeagueCard } from "@/components/league/league-card";
+import { useLeagues } from "@/hooks/leagues/use-leagues";
 import type { League, LeagueFormat, LeagueRules, WeekDay } from "./types";
-import { AdminDialog } from "./components/admin-dialog";
-import { SecretaryDialog } from "./components/secretary-dialog";
+import { AdminDialog } from "@/components/league/admin-dialog";
+import { SecretaryDialog } from "@/components/league/secretary-dialog";
 import type { AvailableAdmin } from "./types";
-import { CreateLeagueDialog } from "./components/create-league-dialog";
+import { CreateLeagueDialog } from "@/components/league/create-league-dialog";
 
 // Define the DB insert type
 type LeagueInsert = Database["public"]["Tables"]["leagues"]["Insert"];

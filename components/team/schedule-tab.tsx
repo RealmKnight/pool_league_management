@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
 import { format } from "date-fns";
-import { LoadingState } from "@/app/leagues/components/loading-state";
-import { ErrorState } from "@/app/leagues/components/error-state";
+import { LoadingState } from "@/components/shared/loading-state";
+import { ErrorState } from "@/components/shared/error-state";
 
 interface ScheduleTabProps {
   teamId: string;
