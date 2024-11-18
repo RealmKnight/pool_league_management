@@ -21,6 +21,7 @@ export default function LeaguePage() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const [league, setLeague] = useState<League | null>(null);
+  const [standings, setStandings] = useState<Array<any>>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClientComponentClient<Database>();
   const activeTab = searchParams.get("tab") || "overview";
@@ -66,6 +67,48 @@ export default function LeaguePage() {
     };
 
     fetchLeague();
+  }, [leagueId, supabase, toast]);
+
+  useEffect(() => {
+    const fetchStandings = async () => {
+      if (!leagueId) return;
+
+      try {
+        const { data, error } = await supabase
+          .from("team_statistics")
+          .select(
+            `
+            *,
+            team:team_id (
+              name
+            )
+          `
+          )
+          .eq("league_id", leagueId)
+          .order("points", { ascending: false });
+
+        if (error) throw error;
+
+        const formattedStandings = data.map(stat => ({
+          team: stat.team,
+          played: stat.matches_played || 0,
+          won: stat.wins || 0,
+          lost: stat.losses || 0,
+          points: stat.points || 0
+        }));
+
+        setStandings(formattedStandings);
+      } catch (error) {
+        console.error("Error fetching standings:", error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load standings",
+        });
+      }
+    };
+
+    fetchStandings();
   }, [leagueId, supabase, toast]);
 
   if (loading) {
@@ -136,7 +179,9 @@ export default function LeaguePage() {
         </TabsContent>
 
         <TabsContent value="standings">
-          <StandingsTab league={league} />
+          <Card className="p-6">
+            <StandingsTab leagueId={leagueId} />
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

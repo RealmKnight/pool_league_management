@@ -14,14 +14,14 @@ import { useToast } from "@/hooks/use-toast";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Team } from "@/app/teams/types";
+import type { TeamWithRelations } from "@/lib/teams";
 
 interface AddTeamDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
   leagueId: string;
-  availableTeams: Team[];
+  availableTeams: TeamWithRelations[];
 }
 
 export function AddTeamDialog({
