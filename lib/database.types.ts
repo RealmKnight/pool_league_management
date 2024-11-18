@@ -18,6 +18,21 @@ export type Database = {
         };
         Returns: Json;
       };
+      manage_team_secretary_role: {
+        Args: {
+          p_team_id: string;
+          p_user_id: string;
+          p_previous_secretary_id: string | null;
+        };
+        Returns: void;
+      };
+      manage_team_captain: {
+        Args: {
+          p_team_id: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       [_ in never]: never;
@@ -232,6 +247,7 @@ export type Database = {
           status: string | null;
           updated_at: string | null;
           venue: string | null;
+          week: number | null;
         };
         Insert: {
           away_team_id?: string | null;
@@ -246,6 +262,7 @@ export type Database = {
           status?: string | null;
           updated_at?: string | null;
           venue?: string | null;
+          week?: number | null;
         };
         Update: {
           away_team_id?: string | null;
@@ -260,6 +277,7 @@ export type Database = {
           status?: string | null;
           updated_at?: string | null;
           venue?: string | null;
+          week?: number | null;
         };
         Relationships: [
           {
@@ -467,6 +485,7 @@ export type Database = {
           status: string;
           team_id: string;
           updated_at: string;
+          user_id: string;
         };
         Insert: {
           created_at?: string;
@@ -475,6 +494,7 @@ export type Database = {
           status?: string;
           team_id: string;
           updated_at?: string;
+          user_id: string;
         };
         Update: {
           created_at?: string;
@@ -483,6 +503,7 @@ export type Database = {
           status?: string;
           team_id?: string;
           updated_at?: string;
+          user_id?: string;
         };
         Relationships: [
           {
@@ -496,6 +517,49 @@ export type Database = {
             columns: ["team_id"];
             referencedRelation: "teams";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_join_requests_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      team_permissions: {
+        Row: {
+          created_at: string | null;
+          id: string;
+          permission_type: string;
+          team_id: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          created_at?: string | null;
+          id?: string;
+          permission_type: string;
+          team_id?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          created_at?: string | null;
+          id?: string;
+          permission_type?: string;
+          team_id?: string | null;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "team_permissions_team_id_fkey";
+            columns: ["team_id"];
+            referencedRelation: "teams";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "team_permissions_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
           }
         ];
       };
@@ -507,9 +571,9 @@ export type Database = {
           join_date: string | null;
           league_id: string | null;
           leave_date: string | null;
-          position: string | null;
+          position: Database["public"]["Enums"]["player_position_enum"] | null;
           role: string | null;
-          status: string | null;
+          status: Database["public"]["Enums"]["player_status_enum"] | null;
           team_id: string | null;
           user_id: string | null;
         };
@@ -520,9 +584,9 @@ export type Database = {
           join_date?: string | null;
           league_id?: string | null;
           leave_date?: string | null;
-          position?: string | null;
+          position?: Database["public"]["Enums"]["player_position_enum"] | null;
           role?: string | null;
-          status?: string | null;
+          status?: Database["public"]["Enums"]["player_status_enum"] | null;
           team_id?: string | null;
           user_id?: string | null;
         };
@@ -533,9 +597,9 @@ export type Database = {
           join_date?: string | null;
           league_id?: string | null;
           leave_date?: string | null;
-          position?: string | null;
+          position?: Database["public"]["Enums"]["player_position_enum"] | null;
           role?: string | null;
-          status?: string | null;
+          status?: Database["public"]["Enums"]["player_status_enum"] | null;
           team_id?: string | null;
           user_id?: string | null;
         };
@@ -807,43 +871,6 @@ export type Database = {
           }
         ];
       };
-      team_permissions: {
-        Row: {
-          id: string;
-          team_id: string;
-          user_id: string;
-          permission_type: string;
-          created_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          team_id: string;
-          user_id: string;
-          permission_type: string;
-          created_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          team_id?: string;
-          user_id?: string;
-          permission_type?: string;
-          created_at?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "team_permissions_team_id_fkey";
-            columns: ["team_id"];
-            referencedRelation: "teams";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "team_permissions_user_id_fkey";
-            columns: ["user_id"];
-            referencedRelation: "users";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
     };
     Views: {
       [_ in never]: never;
@@ -913,6 +940,13 @@ export type Database = {
         };
         Returns: undefined;
       };
+      manage_team_captain: {
+        Args: {
+          p_team_id: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       game_format_enum: "8-Ball" | "9-Ball" | "10-Ball" | "Straight Pool" | "One Pocket" | "Bank Pool";
@@ -921,9 +955,12 @@ export type Database = {
         | "Single Elimination"
         | "Double Elimination"
         | "Swiss"
-        | "Swiss with Knockouts";
-      user_role: "superuser" | "league_admin" | "league_secretary" | "team_captain" | "team_secretary" | "player";
+        | "Swiss with Knockouts"
+        | "Single Round Robin";
+      player_position_enum: "player" | "substitute" | "reserve" | "team_captain" | "team_secretary";
+      player_status_enum: "active" | "inactive" | "suspended";
       team_status_enum: "active" | "inactive" | "pending";
+      user_role: "player" | "superuser" | "league_admin" | "league_secretary" | "team_captain" | "team_secretary";
     };
     CompositeTypes: {
       [_ in never]: never;

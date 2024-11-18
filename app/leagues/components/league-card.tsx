@@ -37,6 +37,46 @@ export function LeagueCard({
     return `${first_name || ""} ${last_name || ""}`.trim() || "Not Assigned";
   };
 
+  // Helper function to format schedule info
+  const getScheduleInfo = () => {
+    const schedulePreferences = league.schedule as {
+      type: string;
+      days: string[] | Array<{ day: string; start_time: string }>;
+      start_time?: string;
+    };
+
+    if (!schedulePreferences) return "No schedule set";
+
+    // Format time from 24h to 12h
+    const formatTime = (time: string) => {
+      if (!time) return "";
+      const [hours] = time.split(":");
+      const hour = parseInt(hours, 10);
+      if (isNaN(hour)) return "";
+      return `${hour > 12 ? hour - 12 : hour}${hour >= 12 ? "PM" : "AM"}`;
+    };
+
+    // Handle single_day type
+    if (schedulePreferences.type === "single_day") {
+      const time = formatTime(schedulePreferences.start_time || "");
+      if (Array.isArray(schedulePreferences.days) && schedulePreferences.days.length > 0) {
+        return `${schedulePreferences.days.join(", ")} @ ${time}`;
+      }
+    }
+
+    // Handle multiple_days type
+    if (schedulePreferences.type === "multiple_days") {
+      const days = schedulePreferences.days as Array<{ day: string; start_time: string }>;
+      if (days.length > 0) {
+        const dayNames = days.map((d) => d.day).join(", ");
+        const time = formatTime(days[0].start_time);
+        return `${dayNames} @ ${time}`;
+      }
+    }
+
+    return "Schedule not configured";
+  };
+
   return (
     <Card className="cursor-pointer" onClick={() => handleNavigation(league.id)}>
       <CardHeader>
@@ -54,6 +94,11 @@ export function LeagueCard({
                   ).toLocaleDateString()}`
                 : "No dates set"}
             </span>
+          </div>
+
+          <div className="flex justify-between text-sm">
+            <span>Schedule: </span>
+            <span>{getScheduleInfo()}</span>
           </div>
 
           <div className="flex justify-between text-sm">

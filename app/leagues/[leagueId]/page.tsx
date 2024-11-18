@@ -24,9 +24,12 @@ export default function LeaguePage() {
   const [loading, setLoading] = useState(true);
   const supabase = createClientComponentClient<Database>();
   const activeTab = searchParams.get("tab") || "overview";
+  const leagueId = typeof params.leagueId === "string" ? params.leagueId : "";
 
   useEffect(() => {
     const fetchLeague = async () => {
+      if (!leagueId) return;
+
       try {
         const { data, error } = await supabase
           .from("leagues")
@@ -45,7 +48,7 @@ export default function LeaguePage() {
             )
           `
           )
-          .eq("id", params.leagueId)
+          .eq("id", leagueId)
           .single();
 
         if (error) throw error;
@@ -63,7 +66,7 @@ export default function LeaguePage() {
     };
 
     fetchLeague();
-  }, [params.leagueId, supabase, toast]);
+  }, [leagueId, supabase, toast]);
 
   if (loading) {
     return <LoadingState />;
@@ -108,8 +111,12 @@ export default function LeaguePage() {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="font-medium">Format:</span>
-                  <span>{formatLeagueFormat(league.format)}</span>
+                  <span className="font-medium">Game Format:</span>
+                  <span>{league.game_format}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium">League Format:</span>
+                  <span>{league.league_format}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Teams:</span>

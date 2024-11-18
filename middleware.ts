@@ -33,15 +33,16 @@ export async function middleware(req: NextRequest) {
       return res;
     }
 
-    // Protected routes handling (dashboard, settings, etc.)
-    if (pathname.startsWith("/dashboard") || pathname.startsWith("/settings")) {
+    // Protected routes handling
+    const protectedPaths = ["/dashboard", "/settings", "/leagues", "/teams"];
+    if (protectedPaths.some((path) => pathname.startsWith(path))) {
       if (!session) {
-        // If no session, redirect to login
+        // Add a query parameter to indicate authentication is required
         const redirectUrl = new URL("/auth/login", req.url);
+        redirectUrl.searchParams.set("from", pathname);
+        redirectUrl.searchParams.set("message", "authentication_required");
         return NextResponse.redirect(redirectUrl);
       }
-      // Allow access to protected routes if logged in
-      return res;
     }
 
     // Update the response with the refreshed session

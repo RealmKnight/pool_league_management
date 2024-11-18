@@ -4,28 +4,46 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LeagueCard } from "./components/league-card";
 import { useLeagues } from "./hooks/use-leagues";
-import type { League } from "./types";
+import type { League, LeagueFormat, LeagueRules, WeekDay } from "./types";
 import { AdminDialog } from "./components/admin-dialog";
 import { SecretaryDialog } from "./components/secretary-dialog";
 import type { AvailableAdmin } from "./types";
-import { CreateLeagueDialog, type CreateLeagueData } from "./components/create-league-dialog";
+import { CreateLeagueDialog } from "./components/create-league-dialog";
+
+// Define the DB insert type
+type LeagueInsert = Database["public"]["Tables"]["leagues"]["Insert"];
+
+interface CreateLeagueFormData {
+  name: string;
+  description: string;
+  game_format: GameFormat;
+  league_format: LeagueFormat;
+  rules: {
+    allowed: LeagueRules[];
+  };
+  team_count: number;
+  requires_approval: boolean;
+  open_registration: boolean;
+  created_by: string;
+  estimated_weeks: number;
+  season_start: string | null;
+  season_end: string | null;
+  schedule: {
+    type: "multiple_days";
+    days: Array<{
+      day: string;
+      start_time: string;
+      end_time: string;
+    }>;
+  };
+  admin_id?: string;
+}
 
 export default function LeaguesPage() {
   const { user } = useAuth();
@@ -234,7 +252,7 @@ export default function LeaguesPage() {
     availableAdmins: [] as AvailableAdmin[],
   });
 
-  const handleCreateLeague = async (data: CreateLeagueData) => {
+  const handleCreateLeague = async (data: CreateLeagueFormData) => {
     setCreateDialog((prev) => ({ ...prev, isLoading: true }));
     try {
       console.log("Creating league with data:", data); // Debug log
@@ -295,6 +313,36 @@ export default function LeaguesPage() {
       // Refresh leagues list
       await loadInitialData();
 
+      // Create the league permission
+      const adminId = data.admin_id || user.id;
+      const { error: permissionError } = await supabase.from("league_permissions").insert({
+        league_id: newLeague.id,
+        user_id: adminId,
+        permission_type: "league_admin",
+        created_at: new Date().toISOString(),
+      });
+
+      if (permissionError) {
+        console.error("Permission creation error:", permissionError);
+        throw permissionError;
+      }
+
+      // If superuser creating for someone else, add superuser as admin too
+      if (userRole === "superuser" && data.admin_id && data.admin_id !== user.id) {
+        const { error: superuserPermissionError } = await supabase.from("league_permissions").insert({
+          league_id: newLeague.id,
+          user_id: user.id,
+          permission_type: "league_admin",
+          created_at: new Date().toISOString(),
+        });
+
+        if (superuserPermissionError) {
+          console.error("Superuser permission error:", superuserPermissionError);
+          throw superuserPermissionError;
+        }
+      }
+
+      await loadInitialData();
       toast({
         title: "Success",
         description: "League created successfully. Please assign an administrator.",
@@ -429,10 +477,10 @@ export default function LeaguesPage() {
       <CreateLeagueDialog
         isOpen={createDialog.isOpen}
         onOpenChange={(open) => setCreateDialog((prev) => ({ ...prev, isOpen: open }))}
-        onSave={handleCreateLeague}
+        onSuccess={loadInitialData}
         isSuperuser={userRole === "superuser"}
         availableAdmins={createDialog.availableAdmins}
-        isLoading={createDialog.isLoading}
+        userId={user?.id}
       />
     </div>
   );

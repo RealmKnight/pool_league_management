@@ -22,18 +22,31 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Home, LogIn, UserPlus, User, Settings, LogOut, Sun, Moon, ListOrderedIcon, BookUserIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { authService } from "@/lib/auth-service";
+import { useToast } from "@/hooks/use-toast";
+import { useRouter } from "next/navigation";
 
 export function Navbar() {
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { toast } = useToast();
+  const router = useRouter();
 
   const handleLogout = async () => {
     await authService.signOut();
     window.location.href = "/";
   };
 
-  const handleNavigation = (path: string) => {
-    window.location.href = path;
+  const handleProtectedNavigation = (path: string) => {
+    if (!user) {
+      toast({
+        variant: "destructive",
+        title: "Authentication Required",
+        description: "You must be signed in to access that page",
+      });
+      router.push("/auth/login");
+      return;
+    }
+    router.push(path);
   };
 
   const getInitials = (name: string) => {
@@ -58,20 +71,16 @@ export function Navbar() {
               </Link>
             </NavigationMenuItem>
             <NavigationMenuItem>
-              <Link href="/leagues" legacyBehavior passHref>
-                <NavigationMenuLink className={navigationMenuTriggerStyle()}>
-                  <ListOrderedIcon className="mr-2 h-4 w-4" />
-                  Leagues
-                </NavigationMenuLink>
-              </Link>
+              <button onClick={() => handleProtectedNavigation("/leagues")} className={navigationMenuTriggerStyle()}>
+                <ListOrderedIcon className="mr-2 h-4 w-4" />
+                Leagues
+              </button>
             </NavigationMenuItem>
             <NavigationMenuItem>
-              <Link href="/teams" legacyBehavior passHref>
-                <NavigationMenuLink className={navigationMenuTriggerStyle()}>
-                  <BookUserIcon className="mr-2 h-4 w-4" />
-                  Teams
-                </NavigationMenuLink>
-              </Link>
+              <button onClick={() => handleProtectedNavigation("/teams")} className={navigationMenuTriggerStyle()}>
+                <BookUserIcon className="mr-2 h-4 w-4" />
+                Teams
+              </button>
             </NavigationMenuItem>
           </NavigationMenuList>
         </NavigationMenu>
@@ -95,11 +104,11 @@ export function Navbar() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => handleNavigation("/dashboard")}>
+                <DropdownMenuItem onClick={() => handleProtectedNavigation("/dashboard")}>
                   <User className="mr-2 h-4 w-4" />
                   Dashboard
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleNavigation("/settings")}>
+                <DropdownMenuItem onClick={() => handleProtectedNavigation("/settings")}>
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
                 </DropdownMenuItem>

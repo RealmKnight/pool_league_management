@@ -1,11 +1,19 @@
 import type { Database } from "@/lib/database.types";
 
-// Base type from database
-export type BaseTeam = Database["public"]["Tables"]["teams"]["Row"];
-
-// Team with permissions and players
-export type Team = BaseTeam & {
-  team_permissions: Array<{
+export type Team = {
+  id: string;
+  name: string;
+  format: string;
+  home_venue: string | null;
+  league_id: string | null;
+  logo_url: string | null;
+  max_players: number | null;
+  status: Database["public"]["Enums"]["team_status_enum"] | null;
+  team_contact: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  created_by: string;
+  team_permissions: {
     id: string;
     user_id: string;
     permission_type: string;
@@ -14,8 +22,8 @@ export type Team = BaseTeam & {
       first_name: string | null;
       last_name: string | null;
     };
-  }>;
-  team_players: Array<{
+  }[];
+  team_players: {
     id: string;
     user_id: string;
     jersey_number: string | null;
@@ -24,27 +32,34 @@ export type Team = BaseTeam & {
     users: {
       first_name: string | null;
       last_name: string | null;
-      email: string | null;
     };
-  }>;
+  }[];
   league: {
     id: string;
     name: string;
-    game_format: string;
   } | null;
-  format: TeamFormat;
 };
 
-export type TeamFormat = "singles" | "doubles" | "scotch-doubles";
 export type AvailableCaptain = {
   id: string;
-  first_name: string;
-  last_name: string;
+  first_name: string | null;
+  last_name: string | null;
 };
 
-export type CaptainDialogState = {
-  isOpen: boolean;
-  teamId: string | null;
-  isLoading: boolean;
-  captains: AvailableCaptain[];
+export type TeamPlayer = Database["public"]["Tables"]["team_players"]["Row"] & {
+  users: {
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+  } | null;
+  team_permissions?: {
+    id: string;
+    user_id: string;
+    permission_type: string;
+    created_at: string;
+    users: {
+      first_name: string | null;
+      last_name: string | null;
+    };
+  }[];
 };

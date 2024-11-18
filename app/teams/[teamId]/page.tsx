@@ -1,26 +1,38 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import type { Database } from "@/lib/database.types";
 import { OverviewTab } from "./components/overview-tab";
-import { ScheduleTab } from "./components/schedule-tab";
+import { ScheduleTab } from "../components/schedule-tab";
 import { StandingsTab } from "./components/standings-tab";
 import { PlayersTab } from "./components/players-tab";
 import type { Team } from "@/app/teams/types";
+import { Button } from "@/components/ui/button";
+import { useUser } from "@/hooks/use-user";
+import { AddPlayerDialog } from "./components/add-player-dialog";
+import { PlusIcon } from "@radix-ui/react-icons";
 
 export default function TeamPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const teamId = params?.teamId as string;
   const supabase = createClientComponentClient<Database>();
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
+  const { user, userRoles } = useUser();
+  const [isAddPlayerDialogOpen, setIsAddPlayerDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
     const fetchTeam = async () => {
-      if (!params.teamId) return;
+      if (!teamId) {
+        setLoading(false);
+        return;
+      }
 
       try {
         const { data, error } = await supabase
@@ -57,7 +69,7 @@ export default function TeamPage() {
             )
           `
           )
-          .eq("id", params.teamId)
+          .eq("id", teamId)
           .single();
 
         if (error) throw error;
@@ -70,7 +82,48 @@ export default function TeamPage() {
     };
 
     fetchTeam();
-  }, [params.teamId, supabase]);
+  }, [teamId, supabase]);
+
+  const handlePlayerAdded = () => {
+    setIsAddPlayerDialogOpen(false);
+    if (activeTab === "players") {
+      const playersTabElement = document.querySelector('[data-tab="players"]');
+      if (playersTabElement) {
+        const event = new CustomEvent("refreshPlayers");
+        playersTabElement.dispatchEvent(event);
+      }
+    }
+  };
+
+  const canAddPlayers = () => {
+    if (!team || !user || !userRoles) return false;
+
+    if (
+      userRoles.includes("superuser") ||
+      userRoles.includes("league_admin") ||
+      userRoles.includes("league_secretary")
+    ) {
+      return true;
+    }
+
+    const userPermission = team.team_permissions?.find((permission) => permission.user_id === user.id);
+
+    return userPermission?.permission_type === "team_captain" || userPermission?.permission_type === "team_secretary";
+  };
+
+  // Handle initial state from URL parameters
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const dialog = searchParams.get("dialog");
+
+    if (tab) {
+      setActiveTab(tab);
+    }
+
+    if (dialog === "add-players") {
+      setIsAddPlayerDialogOpen(true);
+    }
+  }, [searchParams]);
 
   if (loading) {
     return <div>Loading...</div>;
@@ -84,9 +137,10 @@ export default function TeamPage() {
     <div className="space-y-6 p-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">{team.name}</h1>
+        {canAddPlayers() && <Button onClick={() => setIsAddPlayerDialogOpen(true)}>Add Players</Button>}
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
@@ -101,9 +155,7 @@ export default function TeamPage() {
         </TabsContent>
 
         <TabsContent value="schedule">
-          <Card className="p-6">
-            <ScheduleTab teamId={team.id} />
-          </Card>
+          <ScheduleTab teamId={team.id} />
         </TabsContent>
 
         <TabsContent value="standings">
@@ -114,10 +166,17 @@ export default function TeamPage() {
 
         <TabsContent value="players">
           <Card className="p-6">
-            <PlayersTab team={team} />
+            <PlayersTab team={team} data-tab="players" />
           </Card>
         </TabsContent>
       </Tabs>
+
+      <AddPlayerDialog
+        teamId={team.id}
+        isOpen={isAddPlayerDialogOpen}
+        onOpenChange={setIsAddPlayerDialogOpen}
+        onPlayerAdded={handlePlayerAdded}
+      />
     </div>
   );
 }
