@@ -1,6 +1,8 @@
 import type { Database } from "@/lib/database.types";
 
-export type TeamWithRelations = Database["public"]["Tables"]["teams"]["Row"] & {
+export type Team = Database["public"]["Tables"]["teams"]["Row"];
+
+export type TeamWithRelations = Team & {
   team_permissions?: Array<{
     id: string;
     user_id: string;
@@ -15,6 +17,6 @@ export type TeamWithRelations = Database["public"]["Tables"]["teams"]["Row"] & {
 
 export interface AvailableCaptain {
   id: string;
-  first_name: string;
-  last_name: string;
+  first_name: string | null;
+  last_name: string | null;
 }

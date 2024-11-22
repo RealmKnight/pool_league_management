@@ -10,7 +10,7 @@ import { Plus, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { TeamCard } from "@/components/team/team-card";
 import { useTeams } from "@/hooks/use-teams";
-import type { Team, AvailableCaptain } from "@/types/teams";
+import type { TeamWithRelations, AvailableCaptain } from "@/lib/teams";
 import { CaptainDialog } from "@/components/team/captain-dialog";
 import { SecretaryDialog } from "@/components/team/secretary-dialog";
 import { CreateTeamDialog, type CreateTeamData } from "@/components/team/create-team-dialog";
@@ -41,11 +41,13 @@ export default function TeamsPage() {
     teamId: string | null;
     isLoading: boolean;
     captains: AvailableCaptain[];
+    currentCaptainId: string | null;
   }>({
     isOpen: false,
     teamId: null,
     isLoading: false,
     captains: [],
+    currentCaptainId: null,
   });
 
   const [secretaryDialog, setSecretaryDialog] = useState({
@@ -85,32 +87,39 @@ export default function TeamsPage() {
   const handleCaptainChange = async (teamId: string) => {
     setCaptainDialog((prev) => ({ ...prev, isOpen: true, teamId, isLoading: true }));
     try {
-      const { data: users, error } = await supabase
+      // Get current captain - use maybeSingle() instead of single() to handle no captain case
+      const { data: currentCaptain } = await supabase
+        .from("team_permissions")
+        .select("user_id")
+        .eq("team_id", teamId)
+        .eq("permission_type", "team_captain")
+        .maybeSingle();
+
+      // Get available users
+      const { data, error } = await supabase
         .from("users")
-        .select("id, first_name, last_name, email")
+        .select("id, first_name, last_name")
         .order("first_name");
 
       if (error) throw error;
 
-      const mappedCaptains = users.map((user) => ({
-        id: user.id,
-        name: `${user.first_name || ""} ${user.last_name || ""}`.trim(),
-        email: user.email || "",
-      }));
-
       setCaptainDialog((prev) => ({
         ...prev,
         isLoading: false,
-        captains: mappedCaptains,
+        captains: data.map((user) => ({
+          id: user.id,
+          name: `${user.first_name} ${user.last_name}`.trim(),
+        })),
+        currentCaptainId: currentCaptain?.user_id || null,
       }));
     } catch (error) {
       console.error("Error fetching users:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to fetch users",
+        description: "Failed to load available users",
       });
-      setCaptainDialog((prev) => ({ ...prev, isOpen: false }));
+      setCaptainDialog((prev) => ({ ...prev, isOpen: false, isLoading: false }));
     }
   };
 
@@ -217,11 +226,11 @@ export default function TeamsPage() {
     );
   };
 
-  const canManageSecretaries = (team: Team, userId: string, userRole: string | null) => {
+  const canManageSecretaries = (team: TeamWithRelations, userId: string, userRole: string | null) => {
     return userRole === "superuser" || isTeamCaptain(team, userId);
   };
 
-  const isTeamCaptain = (team: Team, userId: string) => {
+  const isTeamCaptain = (team: TeamWithRelations, userId: string) => {
     return team.team_permissions?.some((p) => p.permission_type === "team_captain" && p.user_id === userId);
   };
 
@@ -259,7 +268,7 @@ export default function TeamsPage() {
         userRole={userRole}
         onCaptainChange={handleCaptainChange}
         onSecretaryChange={handleSecretaryChange}
-        canManageSecretaries={canManageSecretaries(team, user?.id || "", userRole)}
+        canManageSecretaries={canManageSecretaries}
         userId={user?.id || ""}
         isTeamMember={!!userTeamMemberships[team.id]}
         isInLeague={!!userTeamMemberships[team.league_id || ""]}
@@ -300,7 +309,7 @@ export default function TeamsPage() {
         .select("user_id")
         .eq("team_id", captainDialog.teamId)
         .eq("permission_type", "team_captain")
-        .single();
+        .maybeSingle();
 
       // 1. Update team permissions using RPC function
       const { error: captainError } = await supabase.rpc("manage_team_captain", {
@@ -462,6 +471,7 @@ export default function TeamsPage() {
         availableCaptains={captainDialog.captains}
         isLoading={captainDialog.isLoading}
         onSave={handleCaptainSave}
+        currentCaptainId={captainDialog.currentCaptainId}
       />
 
       <SecretaryDialog

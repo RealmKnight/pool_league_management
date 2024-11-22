@@ -1,13 +1,14 @@
 import { useState, useCallback } from "react";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
-import type { Team } from "../types";
+import type { TeamWithRelations } from "@/lib/teams";
 
 export function useTeams(userId: string | undefined) {
   const supabase = createClientComponentClient<Database>();
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [filteredTeams, setFilteredTeams] = useState<Team[]>([]);
+  const [teams, setTeams] = useState<TeamWithRelations[]>([]);
+  const [filteredTeams, setFilteredTeams] = useState<TeamWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
 
   const loadInitialData = useCallback(async () => {
@@ -28,12 +29,12 @@ export function useTeams(userId: string | undefined) {
       // Then get teams with their permissions
       const { data, error } = await supabase.from("teams").select(`
           *,
-          team_permissions!team_permissions_team_id_fkey (
+          team_permissions (
             id,
             user_id,
             permission_type,
-            created_at,
-            users:user_id (
+            users (
+              id,
               first_name,
               last_name
             )
@@ -42,24 +43,34 @@ export function useTeams(userId: string | undefined) {
 
       if (error) throw error;
 
-      setTeams(data as unknown as Team[]);
-      setFilteredTeams(data as unknown as Team[]);
+      setTeams(data);
+      setFilteredTeams(data);
     } catch (error) {
       console.error("Error loading teams:", error);
+      setError(error instanceof Error ? error : new Error('Failed to load teams'));
     } finally {
       setLoading(false);
     }
-  }, [supabase, userId]);
+  }, [userId, supabase]);
 
-  const handleSearch = (searchTerm: string) => {
-    const lowercasedTerm = searchTerm.toLowerCase();
-    setFilteredTeams(teams.filter((team) => team.name.toLowerCase().includes(lowercasedTerm)));
-  };
+  const handleSearch = useCallback((searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setFilteredTeams(teams);
+      return;
+    }
+
+    const lowerSearchTerm = searchTerm.toLowerCase();
+    const filtered = teams.filter((team) => 
+      team.name.toLowerCase().includes(lowerSearchTerm)
+    );
+    setFilteredTeams(filtered);
+  }, [teams]);
 
   return {
     teams,
     filteredTeams,
     loading,
+    error,
     userRole,
     loadInitialData,
     handleSearch,

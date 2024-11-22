@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import type { Team } from "@/app/teams/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ManagePlayerRole } from "./manage-player-role";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
@@ -9,6 +8,8 @@ import type { Database } from "@/lib/database.types";
 import { Badge } from "@/components/ui/badge";
 import { useUser } from "@/hooks/use-user";
 import { usePermissions } from "@/hooks/use-permissions";
+
+type Team = Database["public"]["Tables"]["teams"]["Row"];
 
 interface PlayersTabProps {
   team: Team;
@@ -50,7 +51,7 @@ type TeamOfficial = {
   };
 };
 
-export const PlayersTab: React.FC<PlayersTabProps> = ({ team, ...props }) => {
+export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
   const [players, setPlayers] = useState<TeamPlayer[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { user, userRoles, isAdmin, isSecretary, isCaptain } = useUser();
@@ -62,6 +63,15 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team, ...props }) => {
     if (!user) return false;
     return isAdmin || isSecretary || isCaptain || hasPermission("team_captain") || hasPermission("team_secretary");
   }, [user, isAdmin, isSecretary, isCaptain, hasPermission]);
+
+  // Sort players by name
+  const sortPlayers = useCallback((players: TeamPlayer[]) => {
+    return [...players].sort((a, b) => {
+      const nameA = `${a.users?.first_name || ''} ${a.users?.last_name || ''}`.trim().toLowerCase();
+      const nameB = `${b.users?.first_name || ''} ${b.users?.last_name || ''}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }, []);
 
   // Load team data function
   const loadTeamData = useCallback(async () => {
@@ -155,7 +165,7 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team, ...props }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [team.id, supabase]); // Remove unnecessary dependencies
+  }, [team.id, supabase]);
 
   // Load data only on mount or when team changes
   useEffect(() => {
@@ -163,34 +173,7 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team, ...props }) => {
       loadTeamData();
       initialLoadComplete.current = true;
     }
-  }, [team.id]); // Only depend on team.id
-
-  const sortPlayers = useCallback((players: TeamPlayer[]) => {
-    return players.sort((a, b) => {
-      const roleA = getTeamRole(a);
-      const roleB = getTeamRole(b);
-
-      const rolePriority: { [key: string]: number } = {
-        team_captain: 1,
-        team_secretary: 2,
-        player: 3,
-        substitute: 4,
-        reserve: 5,
-      };
-
-      const priorityA = rolePriority[roleA] || 999;
-      const priorityB = rolePriority[roleB] || 999;
-
-      if (priorityA !== priorityB) {
-        return priorityA - priorityB;
-      }
-
-      // Sort by name if roles are the same
-      return `${a.users?.first_name} ${a.users?.last_name}`.localeCompare(
-        `${b.users?.first_name} ${b.users?.last_name}`
-      );
-    });
-  }, []);
+  }, [team.id]);
 
   // Get the player's team role (not RBAC role)
   const getTeamRole = (player: TeamPlayer) => {
@@ -241,7 +224,7 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team, ...props }) => {
   }, [loadTeamData]);
 
   return (
-    <div className="space-y-6" {...props}>
+    <div className="space-y-6">
       <h2 className="text-2xl font-semibold">Team Players</h2>
 
       <Table>

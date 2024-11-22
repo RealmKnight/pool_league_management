@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { AddTeamDialog } from "@/components/league/add-team-dialog";
 import { CaptainDialog } from "@/components/team/captain-dialog";
-import type { TeamWithRelations } from "@/lib/teams";
-import type { AvailableCaptain } from "@/components/types";
+import type { TeamWithRelations, AvailableCaptain } from "@/lib/teams";
+import type { League } from "@/app/leagues/types";
 import {
   Table,
   TableBody,
@@ -20,7 +20,6 @@ import type { Database } from "@/lib/database.types";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingState } from "@/components/shared/loading-state";
 import { ErrorState } from "@/components/shared/error-state";
-import type { League } from "@/app/leagues/types";
 import Link from "next/link";
 
 interface TeamsTabProps {
@@ -38,7 +37,7 @@ export function TeamsTab({ league }: TeamsTabProps) {
   const [selectedTeam, setSelectedTeam] = useState<TeamWithRelations | null>(null);
   const [isCaptainDialogOpen, setIsCaptainDialogOpen] = useState(false);
   const [availableCaptains, setAvailableCaptains] = useState<AvailableCaptain[]>([]);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<Database["public"]["Enums"]["user_role"] | null>(null);
   
   const supabase = createClientComponentClient<Database>();
   const { toast } = useToast();
@@ -167,18 +166,15 @@ export function TeamsTab({ league }: TeamsTabProps) {
       if (captainsError) throw captainsError;
 
       // Get the list of user IDs who are already captains in this league
-      const existingCaptainIds = new Set(leagueCaptains.map(c => c.user_id));
+      const existingCaptainIds = new Set(leagueCaptains?.map(c => c.user_id) ?? []);
 
       // Get all users except those who are already captains in this league
       const { data: users, error: usersError } = await supabase
         .from('users')
-        .select('id, first_name, last_name, email')
+        .select('id, first_name, last_name')
         .order('first_name');
 
       if (usersError) throw usersError;
-
-      console.log('Available users from DB:', users);
-      console.log('Existing captain IDs in league:', Array.from(existingCaptainIds));
 
       // Filter out users who are already captains in this league
       // except for the current team's captain (if any)
@@ -188,21 +184,20 @@ export function TeamsTab({ league }: TeamsTabProps) {
         ?.find(p => p.permission_type === 'team_captain')
         ?.user_id;
 
-      const mappedCaptains = users
+      const mappedCaptains = (users ?? [])
         .filter(user => !existingCaptainIds.has(user.id) || user.id === currentTeamCaptain)
         .map(user => ({
           id: user.id,
-          name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
-          email: user.email || '',
+          first_name: user.first_name,
+          last_name: user.last_name
         }));
 
-      console.log('Mapped available captains:', mappedCaptains);
       setAvailableCaptains(mappedCaptains);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching available captains:', error);
       toast({
         title: "Error fetching available captains",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Unknown error occurred",
         variant: "destructive",
       });
     }
@@ -221,22 +216,17 @@ export function TeamsTab({ league }: TeamsTabProps) {
 
     try {
       // Remove existing captain permission if any
-      const { data: existingPermissions } = await supabase
+      const { data: existingPermissions, error: deleteError } = await supabase
         .from('team_permissions')
-        .select('id')
+        .delete()
         .eq('team_id', selectedTeam.id)
-        .eq('permission_type', 'team_captain');
+        .eq('permission_type', 'team_captain')
+        .select();
 
-      if (existingPermissions?.length) {
-        await supabase
-          .from('team_permissions')
-          .delete()
-          .eq('team_id', selectedTeam.id)
-          .eq('permission_type', 'team_captain');
-      }
+      if (deleteError) throw deleteError;
 
       // Add new captain permission
-      await supabase
+      const { error: insertError } = await supabase
         .from('team_permissions')
         .insert({
           team_id: selectedTeam.id,
@@ -244,56 +234,17 @@ export function TeamsTab({ league }: TeamsTabProps) {
           permission_type: 'team_captain'
         });
 
+      if (insertError) throw insertError;
+
       toast({
         title: "Success",
         description: "Team captain updated successfully",
       });
 
       // Refresh teams list
-      setLoading(true);
-      const fetchTeams = async () => {
-        try {
-          const {
-            data: { user },
-            error: userError,
-          } = await supabase.auth.getUser();
-
-          if (userError) throw userError;
-
-          // Fetch teams in the league
-          const { data: leagueTeams, error: leagueTeamsError } = await supabase
-            .from("teams")
-            .select(`
-              *,
-              team_permissions (
-                id,
-                user_id,
-                permission_type,
-                users (
-                  id,
-                  first_name,
-                  last_name
-                )
-              )
-            `)
-            .eq("league_id", league.id);
-
-          if (leagueTeamsError) throw leagueTeamsError;
-
-          setTeams(leagueTeams as TeamWithRelations[] ?? []);
-        } catch (error) {
-          console.error("Error fetching teams:", error);
-          toast({
-            title: "Error",
-            description: "Failed to load teams. Please try again later.",
-            variant: "destructive",
-          });
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchTeams();
+      await refreshTeams();
     } catch (error) {
+      console.error('Error updating captain:', error);
       toast({
         title: "Error",
         description: "Failed to update team captain",
@@ -302,51 +253,43 @@ export function TeamsTab({ league }: TeamsTabProps) {
     }
   };
 
-  const handleTeamAdded = () => {
-    // Refresh teams list
+  const refreshTeams = async () => {
     setLoading(true);
-    const fetchTeams = async () => {
-      try {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError) throw userError;
-
-        // Fetch teams in the league
-        const { data: leagueTeams, error: leagueTeamsError } = await supabase
-          .from("teams")
-          .select(`
-            *,
-            team_permissions (
+    try {
+      const { data: leagueTeams, error: leagueTeamsError } = await supabase
+        .from("teams")
+        .select(`
+          *,
+          team_permissions (
+            id,
+            user_id,
+            permission_type,
+            users (
               id,
-              user_id,
-              permission_type,
-              users (
-                id,
-                first_name,
-                last_name
-              )
+              first_name,
+              last_name
             )
-          `)
-          .eq("league_id", league.id);
+          )
+        `)
+        .eq("league_id", league.id);
 
-        if (leagueTeamsError) throw leagueTeamsError;
+      if (leagueTeamsError) throw leagueTeamsError;
 
-        setTeams(leagueTeams as TeamWithRelations[] ?? []);
-      } catch (error) {
-        console.error("Error fetching teams:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load teams. Please try again later.",
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchTeams();
+      setTeams(leagueTeams as TeamWithRelations[] ?? []);
+    } catch (error) {
+      console.error("Error fetching teams:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load teams. Please try again later.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTeamAdded = () => {
+    refreshTeams();
   };
 
   if (loading) {
@@ -374,61 +317,60 @@ export function TeamsTab({ league }: TeamsTabProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {teams.map((team) => (
-              <TableRow 
-                key={team.id} 
-                className="group cursor-pointer"
-                onClick={(e) => {
-                  // Only navigate if we didn't click the captain cell
-                  if (!(e.target as HTMLElement).closest('.captain-cell')) {
-                    window.location.href = `/teams/${team.id}`;
-                  }
-                }}
-              >
-                <TableCell className="group-hover:underline">
-                  {team.name}
-                </TableCell>
-                <TableCell>
-                  {team.home_venue || "No Venue"}
-                </TableCell>
-                <TableCell 
-                  className={`captain-cell ${canManageCaptains ? "cursor-pointer hover:underline" : ""}`}
+            {teams.map((team) => {
+              const captain = team.team_permissions?.find(
+                (p) => p.permission_type === "team_captain"
+              )?.users;
+
+              return (
+                <TableRow 
+                  key={team.id} 
+                  className="group cursor-pointer"
                   onClick={(e) => {
-                    e.stopPropagation();
-                    if (canManageCaptains) {
-                      handleCaptainClick(team);
+                    // Only navigate if we didn't click the captain cell
+                    if (!(e.target as HTMLElement).closest('.captain-cell')) {
+                      window.location.href = `/teams/${team.id}`;
                     }
                   }}
                 >
-                  {(() => {
-                    const captain = team.team_permissions?.find(p => 
-                      p.permission_type === "team_captain" && p.users
-                    )?.users;
-                    if (!captain) return "No Captain";
-                    return `${captain.first_name || ''} ${captain.last_name || ''}`.trim() || "No Captain";
-                  })()}
-                </TableCell>
-              </TableRow>
-            ))}
+                  <TableCell className="group-hover:underline">
+                    {team.name}
+                  </TableCell>
+                  <TableCell>
+                    {team.home_venue || "No Venue"}
+                  </TableCell>
+                  <TableCell 
+                    className={`captain-cell ${canManageCaptains ? "cursor-pointer hover:underline" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (canManageCaptains) {
+                        handleCaptainClick(team);
+                      }
+                    }}
+                  >
+                    {captain ? `${captain.first_name} ${captain.last_name}` : "No Captain"}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
 
       <AddTeamDialog
         isOpen={addTeamDialog.isOpen}
-        onOpenChange={(open) => setAddTeamDialog({ isOpen: open })}
-        onSuccess={handleTeamAdded}
+        onClose={() => setAddTeamDialog({ isOpen: false })}
+        onTeamAdded={handleTeamAdded}
         leagueId={league.id}
         availableTeams={availableTeams}
       />
+
       <CaptainDialog
         isOpen={isCaptainDialogOpen}
-        onOpenChange={setIsCaptainDialogOpen}
-        teamId={selectedTeam?.id}
-        currentCaptainId={selectedTeam?.team_permissions?.find(p => p.permission_type === "team_captain")?.user_id}
+        onClose={() => setIsCaptainDialogOpen(false)}
         onSave={handleSaveCaptain}
         availableCaptains={availableCaptains}
-        isLoading={loading}
+        team={selectedTeam}
       />
     </div>
   );
