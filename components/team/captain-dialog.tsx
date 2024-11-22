@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
-import type { AvailableCaptain } from "../types";
+import type { AvailableCaptain } from "@/lib/teams";
 import { useToast } from "@/hooks/use-toast";
 import * as Icons from "@/components/icons";
 
@@ -131,7 +131,7 @@ export function CaptainDialog({
               {availableCaptains?.length > 0 ? (
                 availableCaptains.map((user) => (
                   <SelectItem key={user.id} value={user.id} disabled={user.id === currentCaptainId}>
-                    {user.name}
+                    {`${user.first_name} ${user.last_name}`}
                     {user.id === currentCaptainId && " (Current)"}
                   </SelectItem>
                 ))
