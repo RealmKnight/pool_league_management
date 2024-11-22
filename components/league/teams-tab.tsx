@@ -119,13 +119,22 @@ export function TeamsTab({ league }: TeamsTabProps) {
 
         if (permissionsError) throw permissionsError;
 
-        const canManage = userPermissions?.some(
+        const hasLeaguePermission = userPermissions?.some(
           (p) => p.permission_type === "admin" || p.permission_type === "secretary"
         ) ?? false;
 
+        // Check if user is a superuser
+        const { data: userData } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user?.id)
+          .single();
+
+        const isSuperuser = userData?.role === 'superuser';
+        
         setTeams(leagueTeams as TeamWithRelations[] ?? []);
         setAvailableTeams(otherTeams as TeamWithRelations[] ?? []);
-        setCanManageTeams(canManage);
+        setCanManageTeams(hasLeaguePermission || isSuperuser);
       } catch (error) {
         console.error("Error fetching teams:", error);
         toast({

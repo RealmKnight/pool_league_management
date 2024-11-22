@@ -14,6 +14,7 @@ import { ErrorState } from "@/components/shared/error-state";
 import { TeamsTab } from "@/components/league/teams-tab";
 import { ScheduleTab } from "@/components/league/schedule-tab";
 import { StandingsTab } from "@/components/league/standings-tab";
+import { SeasonsTab } from "@/components/league/seasons-tab";
 import { formatLeagueFormat } from "../utils/format-strings";
 
 export default function LeaguePage() {
@@ -23,6 +24,7 @@ export default function LeaguePage() {
   const [league, setLeague] = useState<League | null>(null);
   const [standings, setStandings] = useState<Array<any>>([]);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const supabase = createClientComponentClient<Database>();
   const activeTab = searchParams.get("tab") || "overview";
   const leagueId = typeof params.leagueId === "string" ? params.leagueId : "";
@@ -32,28 +34,35 @@ export default function LeaguePage() {
       if (!leagueId) return;
 
       try {
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          setUserRole(null);
+          return;
+        }
+
+        // Fetch league with permissions in a single query
         const { data, error } = await supabase
           .from("leagues")
-          .select(
-            `
+          .select(`
             *,
             league_permissions!league_permissions_league_id_fkey (
-              id,
-              user_id,
-              permission_type,
-              created_at,
-              users!league_permissions_user_id_fkey (
-                first_name,
-                last_name
-              )
+              permission_type
             )
-          `
-          )
+          `)
           .eq("id", leagueId)
           .single();
 
         if (error) throw error;
-        setLeague(data as League);
+
+        // Find user's permission for this league
+        const userPermission = data.league_permissions?.find(
+          (p: any) => p.user_id === user.id
+        );
+
+        setUserRole(userPermission?.permission_type || null);
+        setLeague(data);
       } catch (error) {
         console.error("Error fetching league:", error);
         toast({
@@ -71,10 +80,26 @@ export default function LeaguePage() {
 
   useEffect(() => {
     const fetchStandings = async () => {
-      if (!leagueId) return;
+      if (!leagueId) {
+        console.log("No league ID available for standings fetch");
+        return;
+      }
 
       try {
-        const { data, error } = await supabase
+        // First get the active season for this league
+        const { data: activeSeason, error: seasonError } = await supabase
+          .from("seasons")
+          .select("id")
+          .eq("league_id", leagueId)
+          .eq("status", "active")
+          .single();
+
+        if (seasonError) {
+          console.error("Error fetching active season:", seasonError);
+          return;
+        }
+
+        const { data: stats, error: statsError } = await supabase
           .from("team_statistics")
           .select(
             `
@@ -85,12 +110,13 @@ export default function LeaguePage() {
           `
           )
           .eq("league_id", leagueId)
+          .eq("season_id", activeSeason.id)
           .order("points", { ascending: false });
 
-        if (error) throw error;
+        if (statsError) throw statsError;
 
-        const formattedStandings = data.map(stat => ({
-          team: stat.team,
+        const formattedStandings = stats.map(stat => ({
+          team: stat.team?.name || "Unknown Team",
           played: stat.matches_played || 0,
           won: stat.wins || 0,
           lost: stat.losses || 0,
@@ -108,7 +134,9 @@ export default function LeaguePage() {
       }
     };
 
-    fetchStandings();
+    if (leagueId) {
+      fetchStandings();
+    }
   }, [leagueId, supabase, toast]);
 
   if (loading) {
@@ -120,50 +148,38 @@ export default function LeaguePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>{league.name}</CardTitle>
-          <CardDescription>{league.description}</CardDescription>
-        </CardHeader>
-      </Card>
+    <div className="container mx-auto py-6">
+      <div>
+        <h1 className="text-2xl font-bold">{league.name}</h1>
+        <p className="text-muted-foreground">{league.description}</p>
+      </div>
 
-      <Tabs defaultValue={activeTab} className="space-y-4">
+      <Tabs defaultValue={activeTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="teams">Teams</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
           <TabsTrigger value="standings">Standings</TabsTrigger>
+          <TabsTrigger value="seasons">Seasons</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-4">
+        <TabsContent value="overview">
           <Card>
             <CardHeader>
               <CardTitle>League Details</CardTitle>
+              <CardDescription>View and manage league information</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="font-medium">Season:</span>
-                  <span>
-                    {league.season_start && league.season_end
-                      ? `${new Date(league.season_start).toLocaleDateString()} - ${new Date(
-                          league.season_end
-                        ).toLocaleDateString()}`
-                      : "No dates set"}
-                  </span>
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-medium">Format</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {formatLeagueFormat(league.league_format)}
+                  </p>
                 </div>
-                <div className="flex justify-between">
-                  <span className="font-medium">Game Format:</span>
-                  <span>{league.game_format}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium">League Format:</span>
-                  <span>{league.league_format}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium">Teams:</span>
-                  <span>{league.team_count}</span>
+                <div>
+                  <h3 className="font-medium">Game Format</h3>
+                  <p className="text-sm text-muted-foreground">{league.game_format}</p>
                 </div>
               </div>
             </CardContent>
@@ -179,9 +195,11 @@ export default function LeaguePage() {
         </TabsContent>
 
         <TabsContent value="standings">
-          <Card className="p-6">
-            <StandingsTab leagueId={leagueId} />
-          </Card>
+          <StandingsTab leagueId={leagueId} />
+        </TabsContent>
+
+        <TabsContent value="seasons">
+          <SeasonsTab league={league} userRole={userRole} />
         </TabsContent>
       </Tabs>
     </div>

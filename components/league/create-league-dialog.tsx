@@ -18,6 +18,8 @@ import type { Database } from "@/lib/database.types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { LeagueFormat, LeagueRules, WeekDay } from "@/app/leagues/types";
+import { format } from "date-fns";
+import { calculateSeasonLength } from "@/utils/schedule-utils";
 
 interface CreateLeagueDialogProps {
   isOpen: boolean;
@@ -32,6 +34,7 @@ export function CreateLeagueDialog({ isOpen, onOpenChange, onLeagueCreate }: Cre
   const [weekDay, setWeekDay] = useState<WeekDay>("MONDAY");
   const [rules, setRules] = useState<LeagueRules>("WORLD_RULES");
   const [isHandicapped, setIsHandicapped] = useState(false);
+  const [numberOfTeams, setNumberOfTeams] = useState<number>(8); // Default to 8 teams
 
   const { toast } = useToast();
   const supabase = createClientComponentClient<Database>();
@@ -53,21 +56,40 @@ export function CreateLeagueDialog({ isOpen, onOpenChange, onLeagueCreate }: Cre
         return;
       }
 
-      const { error } = await supabase.from("leagues").insert({
-        name,
-        format,
-        week_day: weekDay,
-        rules,
-        is_handicapped: isHandicapped,
-        admin_id: user.id,
-        secretary_id: user.id,
+      // Create the league
+      const { data: league, error: leagueError } = await supabase
+        .from("leagues")
+        .insert({
+          name,
+          format,
+          week_day: weekDay,
+          rules,
+          is_handicapped: isHandicapped,
+          admin_id: user.id,
+          secretary_id: user.id,
+        })
+        .select()
+        .single();
+
+      if (leagueError) throw leagueError;
+
+      // Calculate season length based on number of teams
+      const { endDate } = calculateSeasonLength(numberOfTeams);
+      const startDate = new Date();
+      
+      const { error: seasonError } = await supabase.from("seasons").insert({
+        league_id: league.id,
+        name: "Season 1",
+        start_date: format(startDate, "yyyy-MM-dd"),
+        end_date: format(endDate, "yyyy-MM-dd"),
+        status: "active",
       });
 
-      if (error) throw error;
+      if (seasonError) throw seasonError;
 
       toast({
         title: "Success",
-        description: "League created successfully",
+        description: "League created successfully with initial season",
       });
 
       onLeagueCreate();
@@ -101,6 +123,21 @@ export function CreateLeagueDialog({ isOpen, onOpenChange, onLeagueCreate }: Cre
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="numberOfTeams">Expected Number of Teams</Label>
+            <Input
+              id="numberOfTeams"
+              type="number"
+              min={2}
+              max={20}
+              value={numberOfTeams}
+              onChange={(e) => setNumberOfTeams(parseInt(e.target.value, 10))}
+            />
+            <p className="text-sm text-muted-foreground">
+              This will be used to calculate the season length
+            </p>
           </div>
 
           <div className="space-y-2">

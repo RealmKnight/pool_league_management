@@ -16,6 +16,9 @@ interface TeamStats {
   team: {
     name: string;
   };
+  season: {
+    name: string;
+  };
 }
 
 interface StandingsTabProps {
@@ -30,52 +33,52 @@ export const StandingsTab: React.FC<StandingsTabProps> = ({ teamId }) => {
   useEffect(() => {
     const fetchStatistics = async () => {
       try {
-        // First get the league_id for the team
-        const { data: teamData, error: teamError } = await supabase
-          .from("teams")
-          .select("league_id")
-          .eq("id", teamId)
-          .single();
-
-        if (teamError) throw teamError;
-
-        if (teamData?.league_id) {
-          // Then get all team statistics for that league
-          const { data, error } = await supabase
-            .from("team_statistics")
-            .select(
-              `
-              *,
-              team:team_id(name)
+        // Then get team statistics for just this team
+        const { data: statsData, error: statsError } = await supabase
+          .from("team_statistics")
+          .select(
             `
+            *,
+            team:team_id(
+              id,
+              name
+            ),
+            season:season_id(
+              id,
+              name
             )
-            .eq("league_id", teamData.league_id)
-            .order("points", { ascending: false });
+          `
+          )
+          .eq("team_id", teamId)
+          .order("season_id", { ascending: false });
 
-          if (error) throw error;
-          setStatistics(data as TeamStats[]);
+        if (statsError) {
+          console.error("Error fetching statistics:", statsError);
+          throw statsError;
         }
+        setStatistics(statsData as TeamStats[]);
       } catch (error) {
-        console.error("Error fetching statistics:", error);
+        console.error("Error in fetchStatistics:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchStatistics();
+    if (teamId) {
+      fetchStatistics();
+    }
   }, [teamId, supabase]);
 
   if (loading) return <div>Loading standings...</div>;
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold">League Standings</h2>
+      <h2 className="text-2xl font-semibold">Team Performance History</h2>
 
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Position</TableHead>
-            <TableHead>Team</TableHead>
+            <TableHead>Season</TableHead>
             <TableHead>Played</TableHead>
             <TableHead>Won</TableHead>
             <TableHead>Drawn</TableHead>
@@ -86,10 +89,9 @@ export const StandingsTab: React.FC<StandingsTabProps> = ({ teamId }) => {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {statistics.map((stat, index) => (
-            <TableRow key={stat.id} className={stat.team_id === teamId ? "bg-muted/50" : ""}>
-              <TableCell>{index + 1}</TableCell>
-              <TableCell>{stat.team.name}</TableCell>
+          {statistics.map((stat) => (
+            <TableRow key={stat.id}>
+              <TableCell>{stat.season.name}</TableCell>
               <TableCell>{stat.matches_played || 0}</TableCell>
               <TableCell>{stat.wins || 0}</TableCell>
               <TableCell>{stat.draws || 0}</TableCell>

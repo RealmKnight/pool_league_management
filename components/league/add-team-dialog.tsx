@@ -43,12 +43,51 @@ export function AddTeamDialog({
     try {
       setIsLoading(true);
 
-      const { error } = await supabase.from("league_teams").insert({
-        league_id: leagueId,
-        team_id: selectedTeamId,
-      });
+      // Get the current season for the league
+      const { data: seasons, error: seasonsError } = await supabase
+        .from("seasons")
+        .select("id")
+        .eq("league_id", leagueId)
+        .eq("status", "active");
 
-      if (error) throw error;
+      if (seasonsError) throw seasonsError;
+
+      // Update the team's league_id
+      const { error: teamError } = await supabase
+        .from("teams")
+        .update({ league_id: leagueId })
+        .eq("id", selectedTeamId);
+
+      if (teamError) throw teamError;
+
+      // Initialize team statistics for each active season
+      if (seasons && seasons.length > 0) {
+        const teamStats = seasons.map((season) => ({
+          league_id: leagueId,
+          team_id: selectedTeamId,
+          season_id: season.id,
+          matches_played: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          goals_for: 0,
+          goals_against: 0,
+          points: 0,
+        }));
+
+        const { error: statsError } = await supabase
+          .from("team_statistics")
+          .insert(teamStats);
+
+        if (statsError) {
+          // If stats creation fails, rollback by removing the league_id from the team
+          await supabase
+            .from("teams")
+            .update({ league_id: null })
+            .eq("id", selectedTeamId);
+          throw statsError;
+        }
+      }
 
       toast({
         title: "Success",
@@ -57,11 +96,11 @@ export function AddTeamDialog({
 
       onSuccess();
       onOpenChange(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       toast({
         title: "Error",
-        description: "Failed to add team to league",
+        description: error.message || "Failed to add team to league",
         variant: "destructive",
       });
     } finally {

@@ -69,7 +69,6 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team, ...props }) => {
 
     try {
       setIsLoading(true);
-      console.log("Loading team data...");
 
       // First, get all team permissions (officials)
       const { data: officialsData, error: officialsError } = await supabase
@@ -149,8 +148,6 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team, ...props }) => {
             role: null,
           })) as TeamPlayer[]),
       ];
-
-      console.log("Setting players:", allPlayers);
       setPlayers(sortPlayers(allPlayers));
     } catch (error) {
       console.error("Error loading team data:", error);
@@ -233,7 +230,6 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team, ...props }) => {
     if (!element) return;
 
     const handleRefresh = () => {
-      console.log("Refreshing players data...");
       loadTeamData();
     };
 

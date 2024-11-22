@@ -85,14 +85,23 @@ export default function TeamsPage() {
   const handleCaptainChange = async (teamId: string) => {
     setCaptainDialog((prev) => ({ ...prev, isOpen: true, teamId, isLoading: true }));
     try {
-      const { data, error } = await supabase.from("users").select("id, first_name, last_name").order("first_name");
+      const { data: users, error } = await supabase
+        .from("users")
+        .select("id, first_name, last_name, email")
+        .order("first_name");
 
       if (error) throw error;
+
+      const mappedCaptains = users.map((user) => ({
+        id: user.id,
+        name: `${user.first_name || ""} ${user.last_name || ""}`.trim(),
+        email: user.email || "",
+      }));
 
       setCaptainDialog((prev) => ({
         ...prev,
         isLoading: false,
-        captains: data as AvailableCaptain[],
+        captains: mappedCaptains,
       }));
     } catch (error) {
       console.error("Error fetching users:", error);
