@@ -140,6 +140,13 @@ export default function TeamPage() {
         open={isAddPlayerDialogOpen}
         onOpenChange={setIsAddPlayerDialogOpen}
         teamId={team.id}
+        onPlayerAdded={() => {
+          // Trigger a refresh of the players list
+          const playersTab = document.querySelector('[data-state="active"]');
+          if (playersTab) {
+            playersTab.dispatchEvent(new Event('refreshPlayers'));
+          }
+        }}
       />
     </div>
   );

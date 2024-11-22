@@ -5,12 +5,12 @@ export type Team = Database["public"]["Tables"]["teams"]["Row"];
 export type TeamWithRelations = Team & {
   team_permissions?: Array<{
     id: string;
-    user_id: string;
+    user_id: string | null;
     permission_type: string;
     users?: {
       id: string;
-      first_name: string;
-      last_name: string;
+      first_name: string | null;
+      last_name: string | null;
     } | null;
   }>;
 }

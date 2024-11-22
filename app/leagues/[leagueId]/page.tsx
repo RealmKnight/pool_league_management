@@ -7,7 +7,7 @@ import type { Database } from "@/lib/database.types";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { League } from "../types";
+import type { League, LeagueFormat } from "../types";
 import { useSearchParams } from "next/navigation";
 import { LoadingState } from "@/components/shared/loading-state";
 import { ErrorState } from "@/components/shared/error-state";
@@ -48,7 +48,11 @@ export default function LeaguePage() {
           .select(`
             *,
             league_permissions!league_permissions_league_id_fkey (
-              permission_type
+              permission_type,
+              users (
+                first_name,
+                last_name
+              )
             )
           `)
           .eq("id", leagueId)
@@ -62,7 +66,19 @@ export default function LeaguePage() {
         );
 
         setUserRole(userPermission?.permission_type || null);
-        setLeague(data);
+        
+        // Transform the data to match the League type
+        setLeague({
+          ...data,
+          format: data.league_format as LeagueFormat,
+          league_permissions: data.league_permissions.map((p: any) => ({
+            ...p,
+            users: {
+              first_name: p.users?.first_name || null,
+              last_name: p.users?.last_name || null
+            }
+          }))
+        });
       } catch (error) {
         console.error("Error fetching league:", error);
         toast({
@@ -87,17 +103,24 @@ export default function LeaguePage() {
 
       try {
         // First get the active season for this league
-        const { data: activeSeason, error: seasonError } = await supabase
+        const { data: activeSeasons, error: seasonError } = await supabase
           .from("seasons")
           .select("id")
           .eq("league_id", leagueId)
-          .eq("status", "active")
-          .single();
+          .eq("status", "active");
 
         if (seasonError) {
           console.error("Error fetching active season:", seasonError);
           return;
         }
+
+        // If there's no active season, just return empty standings
+        if (!activeSeasons || activeSeasons.length === 0) {
+          setStandings([]);
+          return;
+        }
+
+        const activeSeason = activeSeasons[0]; // Use the first active season
 
         const { data: stats, error: statsError } = await supabase
           .from("team_statistics")
@@ -174,7 +197,7 @@ export default function LeaguePage() {
                 <div>
                   <h3 className="font-medium">Format</h3>
                   <p className="text-sm text-muted-foreground">
-                    {formatLeagueFormat(league.league_format)}
+                    {formatLeagueFormat(league.format)}
                   </p>
                 </div>
                 <div>
@@ -195,7 +218,16 @@ export default function LeaguePage() {
         </TabsContent>
 
         <TabsContent value="standings">
-          <StandingsTab leagueId={leagueId} />
+          {standings.length > 0 ? (
+            <StandingsTab leagueId={leagueId} />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>No Active Season</CardTitle>
+                <CardDescription>There is currently no active season for this league.</CardDescription>
+              </CardHeader>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="seasons">

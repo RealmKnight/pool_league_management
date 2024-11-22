@@ -18,7 +18,7 @@ import { Loader2Icon } from "lucide-react";
 
 interface AddPlayerDialogProps {
   teamId: string;
-  isOpen: boolean;
+  open: boolean;
   onOpenChange: (open: boolean) => void;
   onPlayerAdded: () => void;
 }
@@ -30,7 +30,7 @@ type AvailablePlayer = {
   email: string | null;
 };
 
-export function AddPlayerDialog({ teamId, isOpen, onOpenChange, onPlayerAdded }: AddPlayerDialogProps) {
+export function AddPlayerDialog({ teamId, open, onOpenChange, onPlayerAdded }: AddPlayerDialogProps) {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [availablePlayers, setAvailablePlayers] = useState<AvailablePlayer[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,7 +38,7 @@ export function AddPlayerDialog({ teamId, isOpen, onOpenChange, onPlayerAdded }:
   const supabase = createClientComponentClient<Database>();
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!open) return;
 
     const fetchAvailablePlayers = async () => {
       try {
@@ -78,7 +78,7 @@ export function AddPlayerDialog({ teamId, isOpen, onOpenChange, onPlayerAdded }:
     };
 
     fetchAvailablePlayers();
-  }, [isOpen, teamId, supabase, toast]);
+  }, [open, teamId, supabase, toast]);
 
   const handleSave = async () => {
     if (!selectedPlayerId) return;
@@ -116,7 +116,7 @@ export function AddPlayerDialog({ teamId, isOpen, onOpenChange, onPlayerAdded }:
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Add Player</DialogTitle>

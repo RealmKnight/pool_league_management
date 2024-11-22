@@ -7,6 +7,7 @@ import { AddTeamDialog } from "@/components/league/add-team-dialog";
 import { CaptainDialog } from "@/components/team/captain-dialog";
 import type { TeamWithRelations, AvailableCaptain } from "@/lib/teams";
 import type { League } from "@/app/leagues/types";
+import type { MouseEvent } from "react";
 import {
   Table,
   TableBody,
@@ -68,6 +69,7 @@ export function TeamsTab({ league }: TeamsTabProps) {
         } = await supabase.auth.getUser();
 
         if (userError) throw userError;
+        if (!user?.id) throw new Error("No user found");
 
         // Fetch teams in the league
         const { data: leagueTeams, error: leagueTeamsError } = await supabase
@@ -114,7 +116,7 @@ export function TeamsTab({ league }: TeamsTabProps) {
           .from("league_permissions")
           .select("permission_type")
           .eq("league_id", league.id)
-          .eq("user_id", user?.id);
+          .eq("user_id", user.id);
 
         if (permissionsError) throw permissionsError;
 
@@ -126,7 +128,7 @@ export function TeamsTab({ league }: TeamsTabProps) {
         const { data: userData } = await supabase
           .from('users')
           .select('role')
-          .eq('id', user?.id)
+          .eq('id', user.id)
           .single();
 
         const isSuperuser = userData?.role === 'superuser';
@@ -216,7 +218,7 @@ export function TeamsTab({ league }: TeamsTabProps) {
 
     try {
       // Remove existing captain permission if any
-      const { data: existingPermissions, error: deleteError } = await supabase
+      const { error: deleteError } = await supabase
         .from('team_permissions')
         .delete()
         .eq('team_id', selectedTeam.id)
@@ -322,11 +324,15 @@ export function TeamsTab({ league }: TeamsTabProps) {
                 (p) => p.permission_type === "team_captain"
               )?.users;
 
+              const captainName = captain 
+                ? `${captain.first_name || ''} ${captain.last_name || ''}`.trim() || 'Unknown'
+                : "No Captain";
+
               return (
                 <TableRow 
                   key={team.id} 
                   className="group cursor-pointer"
-                  onClick={(e) => {
+                  onClick={(e: MouseEvent<HTMLTableRowElement>) => {
                     // Only navigate if we didn't click the captain cell
                     if (!(e.target as HTMLElement).closest('.captain-cell')) {
                       window.location.href = `/teams/${team.id}`;
@@ -341,14 +347,14 @@ export function TeamsTab({ league }: TeamsTabProps) {
                   </TableCell>
                   <TableCell 
                     className={`captain-cell ${canManageCaptains ? "cursor-pointer hover:underline" : ""}`}
-                    onClick={(e) => {
+                    onClick={(e: MouseEvent<HTMLTableCellElement>) => {
                       e.stopPropagation();
                       if (canManageCaptains) {
                         handleCaptainClick(team);
                       }
                     }}
                   >
-                    {captain ? `${captain.first_name} ${captain.last_name}` : "No Captain"}
+                    {captainName}
                   </TableCell>
                 </TableRow>
               );
@@ -359,18 +365,20 @@ export function TeamsTab({ league }: TeamsTabProps) {
 
       <AddTeamDialog
         isOpen={addTeamDialog.isOpen}
-        onClose={() => setAddTeamDialog({ isOpen: false })}
-        onTeamAdded={handleTeamAdded}
+        onOpenChange={(open) => setAddTeamDialog({ isOpen: open })}
+        onSuccess={handleTeamAdded}
         leagueId={league.id}
         availableTeams={availableTeams}
       />
 
       <CaptainDialog
         isOpen={isCaptainDialogOpen}
-        onClose={() => setIsCaptainDialogOpen(false)}
+        onOpenChange={setIsCaptainDialogOpen}
         onSave={handleSaveCaptain}
         availableCaptains={availableCaptains}
-        team={selectedTeam}
+        teamId={selectedTeam?.id}
+        currentCaptainId={selectedTeam?.team_permissions?.find(p => p.permission_type === 'team_captain')?.user_id ?? null}
+        isLoading={loading}
       />
     </div>
   );

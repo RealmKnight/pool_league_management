@@ -209,7 +209,7 @@ export const PlayersTab: React.FC<PlayersTabProps> = ({ team }) => {
 
   // Add event listener for refresh
   useEffect(() => {
-    const element = document.querySelector('[data-tab="players"]');
+    const element = document.querySelector('[data-state="active"]');
     if (!element) return;
 
     const handleRefresh = () => {

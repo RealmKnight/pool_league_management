@@ -32,6 +32,7 @@ export default function TeamsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [userRole, setUserRole] = useState<Database["public"]["Enums"]["user_role"] | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [userTeamMemberships, setUserTeamMemberships] = useState<Record<string, boolean>>({});
 
@@ -64,12 +65,38 @@ export default function TeamsPage() {
   });
 
   // Use the custom hook
-  const { teams, filteredTeams, loading, error, userRole, loadInitialData, handleSearch } = useTeams(user?.id);
+  const { teams, filteredTeams, loading, error, loadInitialData, handleSearch } = useTeams(user?.id);
 
   // Initial data loading
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
+
+  // Fetch user role
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      if (!user?.id) {
+        setUserRole(null);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (error) throw error;
+        setUserRole(data.role);
+      } catch (error) {
+        console.error('Error fetching user role:', error);
+        setUserRole(null);
+      }
+    };
+
+    fetchUserRole();
+  }, [user?.id, supabase]);
 
   // If there's an error, show it
   useEffect(() => {
@@ -108,7 +135,8 @@ export default function TeamsPage() {
         isLoading: false,
         captains: data.map((user) => ({
           id: user.id,
-          name: `${user.first_name} ${user.last_name}`.trim(),
+          first_name: user.first_name,
+          last_name: user.last_name
         })),
         currentCaptainId: currentCaptain?.user_id || null,
       }));
@@ -226,12 +254,14 @@ export default function TeamsPage() {
     );
   };
 
-  const canManageSecretaries = (team: TeamWithRelations, userId: string, userRole: string | null) => {
+  const canManageSecretaries = (team: TeamWithRelations, userId: string, userRole: string | null): boolean => {
+    if (!team.team_permissions) return false;
     return userRole === "superuser" || isTeamCaptain(team, userId);
   };
 
-  const isTeamCaptain = (team: TeamWithRelations, userId: string) => {
-    return team.team_permissions?.some((p) => p.permission_type === "team_captain" && p.user_id === userId);
+  const isTeamCaptain = (team: TeamWithRelations, userId: string): boolean => {
+    if (!team.team_permissions) return false;
+    return team.team_permissions.some((p) => p.permission_type === "team_captain" && p.user_id === userId);
   };
 
   // Fetch user team memberships
