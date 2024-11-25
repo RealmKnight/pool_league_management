@@ -1,4 +1,4 @@
-import type { League } from "../types";
+import { League, LeagueSchedule, WeekDay, LeagueScheduleType, TimeDisplayFormat } from "../types";
 
 export type ScheduleMatch = {
   week: number;
@@ -19,31 +19,141 @@ export type WeekSchedule = {
   roundName?: string; // For tournament rounds (e.g., "Quarter Finals")
 };
 
+function getNextScheduledDay(currentDate: Date, scheduleDays: LeagueSchedule["days"]): Date {
+  // Ensure we have a valid date object
+  const validCurrentDate = new Date(currentDate.getTime());
+  if (isNaN(validCurrentDate.getTime())) {
+    // If invalid date, use current date
+    validCurrentDate.setTime(Date.now());
+  }
+
+  // If no schedule days provided, use default day (Monday) and time (19:00)
+  if (!scheduleDays?.length) {
+    const nextDate = new Date(validCurrentDate.getTime());
+    const daysUntilMonday = (8 - validCurrentDate.getDay()) % 7;
+    nextDate.setDate(validCurrentDate.getDate() + daysUntilMonday);
+    nextDate.setHours(19, 0, 0, 0);
+    return nextDate;
+  }
+
+  const currentDay = validCurrentDate.getDay();
+  const dayMap: Record<WeekDay, number> = {
+    [WeekDay.SUNDAY]: 0,
+    [WeekDay.MONDAY]: 1,
+    [WeekDay.TUESDAY]: 2,
+    [WeekDay.WEDNESDAY]: 3,
+    [WeekDay.THURSDAY]: 4,
+    [WeekDay.FRIDAY]: 5,
+    [WeekDay.SATURDAY]: 6,
+  };
+
+  // Sort schedule days by their numeric day value
+  const sortedDays = [...scheduleDays].sort((a, b) => dayMap[a.day] - dayMap[b.day]);
+  
+  // Find the next scheduled day
+  const nextDay = sortedDays.find(d => dayMap[d.day] > currentDay) || sortedDays[0];
+  
+  const daysToAdd = nextDay ? 
+    (dayMap[nextDay.day] > currentDay ? 
+      dayMap[nextDay.day] - currentDay : 
+      7 - (currentDay - dayMap[nextDay.day])) : 
+    7;
+
+  const nextDate = new Date(validCurrentDate.getTime());
+  nextDate.setDate(validCurrentDate.getDate() + daysToAdd);
+  
+  // Set time from schedule or use default (19:00)
+  if (nextDay?.startTime) {
+    try {
+      const [hours, minutes] = nextDay.startTime.split(':').map(Number);
+      if (!isNaN(hours) && !isNaN(minutes) && hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+        nextDate.setHours(hours, minutes, 0, 0);
+      } else {
+        nextDate.setHours(19, 0, 0, 0);
+      }
+    } catch {
+      nextDate.setHours(19, 0, 0, 0);
+    }
+  } else {
+    nextDate.setHours(19, 0, 0, 0);
+  }
+
+  return nextDate;
+}
+
 export function generateSchedule(league: League): WeekSchedule[] {
   const { team_count, season_start, season_end, league_format, schedule: schedulePreferences } = league;
 
-  if (!season_start || !season_end) {
+  // Validate required fields
+  if (!team_count || team_count < 2) {
+    console.error("Invalid team count:", team_count);
     return [];
   }
 
-  const startDate = new Date(season_start);
-  const teams = Array.from({ length: team_count }, (_, i) => `Team ${String.fromCharCode(65 + i)}`);
+  try {
+    // Set default dates if not provided
+    const startDate = season_start ? new Date(season_start) : new Date();
+    const endDate = season_end ? new Date(season_end) : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
-  switch (league_format) {
-    case "Single Round Robin":
-      return generateSingleRoundRobin(teams, startDate, schedulePreferences);
-    case "Round Robin":
-      return generateDoubleRoundRobin(teams, startDate, schedulePreferences);
-    case "Single Elimination":
-      return generateSingleElimination(teams, startDate, schedulePreferences);
-    case "Double Elimination":
-      return generateDoubleElimination(teams, startDate, schedulePreferences);
-    case "Swiss":
-      return generateSwiss(teams, startDate, schedulePreferences);
-    case "Swiss with Knockouts":
-      return generateSwissWithKnockouts(teams, startDate, schedulePreferences);
-    default:
-      return generateDoubleRoundRobin(teams, startDate, schedulePreferences);
+    // Validate dates
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      console.error("Invalid dates:", { season_start, season_end });
+      return [];
+    }
+
+    // Ensure schedulePreferences.days exists and has at least one day
+    const scheduleDays = schedulePreferences?.days || [{
+      day: WeekDay.MONDAY,
+      startTime: "19:00"
+    }];
+
+    // Validate schedule days
+    if (!Array.isArray(scheduleDays) || !scheduleDays.length) {
+      console.error("Invalid schedule days:", scheduleDays);
+      return [];
+    }
+
+    // Validate each schedule day
+    for (const day of scheduleDays) {
+      if (!day.day || !Object.values(WeekDay).includes(day.day)) {
+        console.error("Invalid day in schedule:", day);
+        return [];
+      }
+      if (!day.startTime || !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(day.startTime)) {
+        console.error("Invalid time format in schedule:", day);
+        return [];
+      }
+    }
+
+    const teams = Array.from({ length: team_count }, (_, i) => `Team ${String.fromCharCode(65 + i)}`);
+
+    // Create validated schedule preferences
+    const validatedPreferences: LeagueSchedule = {
+      type: schedulePreferences?.type || LeagueScheduleType.single_day,
+      days: scheduleDays,
+      displayFormat: schedulePreferences?.displayFormat || TimeDisplayFormat["12Hour"],
+      isHandicapped: schedulePreferences?.isHandicapped || false
+    };
+
+    switch (league_format) {
+      case "Single Round Robin":
+        return generateSingleRoundRobin(teams, startDate, validatedPreferences);
+      case "Round Robin":
+        return generateDoubleRoundRobin(teams, startDate, validatedPreferences);
+      case "Single Elimination":
+        return generateSingleElimination(teams, startDate, validatedPreferences);
+      case "Double Elimination":
+        return generateDoubleElimination(teams, startDate, validatedPreferences);
+      case "Swiss":
+        return generateSwiss(teams, startDate, validatedPreferences);
+      case "Swiss with Knockouts":
+        return generateSwissWithKnockouts(teams, startDate, validatedPreferences);
+      default:
+        return generateDoubleRoundRobin(teams, startDate, validatedPreferences);
+    }
+  } catch (error) {
+    console.error("Error generating schedule:", error);
+    return [];
   }
 }
 
@@ -282,7 +392,12 @@ function generateSwissWithKnockouts(teams: string[], startDate: Date, preference
   return [...swissRounds, ...knockoutRounds];
 }
 
-function generateRoundRobin(teams: string[], startDate: Date, preferences: any, isDouble: boolean): WeekSchedule[] {
+function generateRoundRobin(
+  teams: string[], 
+  startDate: Date, 
+  preferences: LeagueSchedule, 
+  isDouble: boolean
+): WeekSchedule[] {
   const weeklySchedule: WeekSchedule[] = [];
   const numberOfTeams = teams.length;
   const actualNumberOfTeams = numberOfTeams % 2 === 0 ? numberOfTeams : numberOfTeams + 1;
@@ -295,13 +410,13 @@ function generateRoundRobin(teams: string[], startDate: Date, preferences: any, 
     teamsList.push("BYE");
   }
 
-  for (let round = 0; round < totalRounds; round++) {
-    const roundDate = new Date(startDate);
-    roundDate.setDate(startDate.getDate() + round * 7);
+  let currentDate = new Date(startDate);
 
-    const isSecondHalf = round >= roundsPerHalf;
+  for (let round = 0; round < totalRounds; round++) {
+    currentDate = getNextScheduledDay(currentDate, preferences.days);
     const weekMatches: ScheduleMatch[] = [];
     let byeTeam: string | undefined;
+    const isSecondHalf = round >= roundsPerHalf;
 
     for (let match = 0; match < matchesPerRound; match++) {
       const firstTeam = teamsList[match];
@@ -312,14 +427,12 @@ function generateRoundRobin(teams: string[], startDate: Date, preferences: any, 
       } else if (secondTeam === "BYE") {
         byeTeam = firstTeam;
       } else {
-        // For single round-robin, alternate home/away based on round and match number
-        // For double round-robin, use second half to swap home/away
         const shouldSwap = isDouble ? isSecondHalf : (round + match) % 2 === 1;
         const [homeTeam, awayTeam] = shouldSwap ? [secondTeam, firstTeam] : [firstTeam, secondTeam];
 
         weekMatches.push({
           week: round + 1,
-          matchDate: roundDate.toISOString(),
+          matchDate: currentDate.toISOString(),
           homeTeam,
           awayTeam,
           venue: `${homeTeam} Home Venue`,
@@ -331,7 +444,7 @@ function generateRoundRobin(teams: string[], startDate: Date, preferences: any, 
 
     weeklySchedule.push({
       week: round + 1,
-      matchDate: roundDate.toISOString(),
+      matchDate: currentDate.toISOString(),
       matches: weekMatches,
       byeTeam: byeTeam !== "BYE" ? byeTeam : undefined,
       roundName: `Round ${round + 1}${isSecondHalf ? " (Return)" : ""}`,

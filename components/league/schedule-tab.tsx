@@ -9,7 +9,7 @@ import { generateSchedule, type WeekSchedule } from "@/app/leagues/utils/schedul
 import { format } from "date-fns";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
-import type { League } from "@/app/leagues/types";
+import { League, LeagueSchedule, LeagueScheduleType, TimeDisplayFormat, WeekDay } from "@/app/leagues/types";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
@@ -92,19 +92,26 @@ export function ScheduleTab({ league }: ScheduleTabProps) {
     try {
       setLoading(true);
       setError(null);
-      
-      // Fetch teams assigned to this league with their venues
+
+      // Fetch teams first
       const { data: teams, error: teamsError } = await supabase
         .from("teams")
         .select("name, home_venue")
         .eq("league_id", league.id)
+        .eq("status", "active")  // Only include active teams
         .order("name");
 
       if (teamsError) throw teamsError;
+      
+      if (!teams || teams.length === 0) {
+        setError("No teams found in the league");
+        setSchedule([]);
+        return;
+      }
 
       // Create mapping from placeholder to real team names and venues
       const mapping: TeamMapping = {};
-      teams?.forEach((team, index) => {
+      teams.forEach((team, index) => {
         mapping[`Team ${String.fromCharCode(65 + index)}`] = {
           name: team.name,
           venue: team.home_venue,
@@ -113,12 +120,35 @@ export function ScheduleTab({ league }: ScheduleTabProps) {
 
       setTeamMapping(mapping);
 
-      // Generate schedule
-      const generatedSchedule = generateSchedule(league);
+      // Ensure league has valid schedule data
+      const defaultSchedule: LeagueSchedule = {
+        type: LeagueScheduleType.single_day,
+        days: [{ day: WeekDay.MONDAY, startTime: "19:00" }],
+        displayFormat: TimeDisplayFormat["12Hour"],
+        isHandicapped: false
+      };
+
+      // Create a validated league object with the correct team count
+      const validatedLeague: League = {
+        ...league,
+        team_count: teams.length,  // Use actual team count
+        schedule: league.schedule || defaultSchedule,
+        season_start: league.season_start || new Date().toISOString(),
+        season_end: league.season_end || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      // Generate schedule with validated league data
+      const generatedSchedule = generateSchedule(validatedLeague);
+      
+      if (!generatedSchedule || generatedSchedule.length === 0) {
+        throw new Error("Failed to generate schedule - no schedule was created");
+      }
+      
       setSchedule(generatedSchedule);
     } catch (err) {
       console.error("Error in fetchTeamsAndGenerateSchedule:", err);
-      setError("Failed to generate schedule");
+      setError(err instanceof Error ? err.message : "Failed to generate schedule");
+      setSchedule([]);
     } finally {
       setLoading(false);
     }
@@ -141,44 +171,32 @@ export function ScheduleTab({ league }: ScheduleTabProps) {
 
   // Helper function to format the time from 24h to 12h with AM/PM
   const formatTime = (time: string): string => {
-    const [hours] = time.split(":");
+    const [hours, minutes] = time.split(":");
     const hour = parseInt(hours, 10);
-    return `${hour > 12 ? hour - 12 : hour}${hour >= 12 ? "PM" : "AM"}`;
+    if (isNaN(hour)) return "TBD";
+    return `${hour > 12 ? hour - 12 : hour}:${minutes}${hour >= 12 ? "PM" : "AM"}`;
   };
 
   // Helper function to get schedule time for a given day
   const getScheduleTime = (date: Date): string => {
-    const dayName = format(date, "EEEE");
-    const schedulePreferences = league.schedule as {
-      type: string;
-      days: string[];
-      start_time: string;
-    };
+    const dayName = format(date, "EEEE").toUpperCase() as WeekDay;
+    const schedulePreferences = league.schedule;
 
-    // For single_day type, we just use the start_time directly if the day matches
-    if (schedulePreferences.type === "single_day") {
-      if (schedulePreferences.days.includes(dayName)) {
-        return formatTime(schedulePreferences.start_time);
-      }
+    if (!schedulePreferences?.days?.length) {
+      return "7:00PM"; // Default time if no schedule preferences
     }
 
-    // For multiple_days type, find the matching day's schedule
-    if (schedulePreferences.type === "multiple_days") {
-      const daySchedule = (schedulePreferences.days as Array<{ day: string; start_time: string }>).find(
-        (schedule) => schedule.day === dayName
-      );
+    // Find the matching day's schedule
+    const daySchedule = schedulePreferences.days.find(
+      (schedule) => schedule.day === dayName
+    );
 
-      if (daySchedule) {
-        return formatTime(daySchedule.start_time);
-      }
+    if (daySchedule?.startTime) {
+      return formatTime(daySchedule.startTime);
     }
 
-    // If we have a start_time but no specific day matching, use the default start_time
-    if (schedulePreferences.start_time) {
-      return formatTime(schedulePreferences.start_time);
-    }
-
-    return "TBD";
+    // If no specific time found, use the first available time
+    return formatTime(schedulePreferences.days[0].startTime);
   };
 
   // Helper function to format the full date and time

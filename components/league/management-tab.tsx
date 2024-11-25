@@ -1,14 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,35 +9,35 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/lib/database.types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { GameFormat, LeagueFormat, LeagueRules, WeekDay, LeagueScheduleType, TimeDisplayFormat } from "@/app/leagues/types";
-import { format } from "date-fns";
-import { calculateSeasonLength } from "@/utils/schedule-utils";
+import { League, GameFormat, LeagueFormat, LeagueRules, TimeDisplayFormat, LeagueSchedule } from "@/app/leagues/types";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScheduleSelector } from "./schedule-selector";
 
-interface CreateLeagueDialogProps {
-  isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
-  onLeagueCreate: () => void;
+interface ManagementTabProps {
+  league: League;
+  userRole: string | null;
+  onUpdate: () => void;
 }
 
-export function CreateLeagueDialog({ isOpen, onOpenChange, onLeagueCreate }: CreateLeagueDialogProps) {
+export function ManagementTab({ league, userRole, onUpdate }: ManagementTabProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [name, setName] = useState("");
-  const [gameFormat, setGameFormat] = useState<GameFormat>(GameFormat["8-Ball"]);
-  const [leagueFormat, setLeagueFormat] = useState<LeagueFormat>(LeagueFormat["Round Robin"]);
-  const [rules, setRules] = useState<LeagueRules>(LeagueRules.BCA);
-  const [numberOfTeams, setNumberOfTeams] = useState<number>(8); // Default to 8 teams
-  const [schedule, setSchedule] = useState({
-    type: LeagueScheduleType.single_day,
-    days: [{ day: WeekDay.MONDAY, startTime: "19:00" }],
-    displayFormat: TimeDisplayFormat["12Hour"],
-    isHandicapped: false
+  const [name, setName] = useState(league.name);
+  const [description, setDescription] = useState(league.description || "");
+  const [gameFormat, setGameFormat] = useState<GameFormat>(league.game_format as GameFormat);
+  const [leagueFormat, setLeagueFormat] = useState<LeagueFormat>(league.league_format as LeagueFormat);
+  const [rules, setRules] = useState<LeagueRules>(league.rules as LeagueRules);
+  const [schedule, setSchedule] = useState<LeagueSchedule>({
+    type: league.schedule.type,
+    days: league.schedule.days,
+    displayFormat: league.schedule.displayFormat || TimeDisplayFormat["12Hour"],
+    isHandicapped: league.schedule.isHandicapped
   });
 
   const { toast } = useToast();
   const supabase = createClientComponentClient<Database>();
 
-  const handleCreate = async () => {
+  const handleUpdate = async () => {
     try {
       setIsLoading(true);
 
@@ -56,25 +48,21 @@ export function CreateLeagueDialog({ isOpen, onOpenChange, onLeagueCreate }: Cre
       if (!user) {
         toast({
           title: "Error",
-          description: "You must be logged in to create a league",
+          description: "You must be logged in to update the league",
           variant: "destructive",
         });
         return;
       }
 
-      // Create the league
-      const { data: league, error: leagueError } = await supabase
+      // Update the league
+      const { error: leagueError } = await supabase
         .from("leagues")
-        .insert({
+        .update({
           name,
-          description: null,
-          created_by: user.id,
+          description,
           game_format: gameFormat,
           league_format: leagueFormat,
           rules,
-          open_registration: true,
-          team_count: numberOfTeams,
-          estimated_weeks: numberOfTeams * 2, // Rough estimate
           schedule: {
             type: schedule.type,
             days: schedule.days.map(day => ({
@@ -83,39 +71,23 @@ export function CreateLeagueDialog({ isOpen, onOpenChange, onLeagueCreate }: Cre
             })),
             displayFormat: schedule.displayFormat as string,
             isHandicapped: schedule.isHandicapped
-          },
+          }
         })
-        .select()
-        .single();
+        .eq("id", league.id);
 
       if (leagueError) throw leagueError;
 
-      // Calculate season length based on number of teams
-      const { endDate } = calculateSeasonLength(numberOfTeams);
-      const startDate = new Date();
-      
-      const { error: seasonError } = await supabase.from("seasons").insert({
-        league_id: league.id,
-        name: "Season 1",
-        start_date: format(startDate, "yyyy-MM-dd"),
-        end_date: format(endDate, "yyyy-MM-dd"),
-        status: "active",
-      });
-
-      if (seasonError) throw seasonError;
-
       toast({
         title: "Success",
-        description: "League created successfully with initial season",
+        description: "League updated successfully",
       });
 
-      onLeagueCreate();
-      onOpenChange(false);
+      onUpdate();
     } catch (error) {
       console.error(error);
       toast({
         title: "Error",
-        description: "Something went wrong",
+        description: "Something went wrong while updating the league",
         variant: "destructive",
       });
     } finally {
@@ -123,15 +95,27 @@ export function CreateLeagueDialog({ isOpen, onOpenChange, onLeagueCreate }: Cre
     }
   };
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Create League</DialogTitle>
-          <DialogDescription>Create a new league and become its administrator.</DialogDescription>
-        </DialogHeader>
+  if (!["superuser", "league_admin", "league_secretary"].includes(userRole || "")) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Unauthorized</CardTitle>
+          <CardDescription>
+            You do not have permission to manage this league.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
-        <div className="space-y-4 py-4">
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>League Management</CardTitle>
+        <CardDescription>Update league settings and configuration.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">League Name</Label>
             <Input
@@ -143,18 +127,13 @@ export function CreateLeagueDialog({ isOpen, onOpenChange, onLeagueCreate }: Cre
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="numberOfTeams">Expected Number of Teams</Label>
-            <Input
-              id="numberOfTeams"
-              type="number"
-              min={2}
-              max={20}
-              value={numberOfTeams}
-              onChange={(e) => setNumberOfTeams(parseInt(e.target.value, 10))}
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              placeholder="Enter league description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
             />
-            <p className="text-sm text-muted-foreground">
-              This will be used to calculate the season length
-            </p>
           </div>
 
           <div className="space-y-2">
@@ -221,17 +200,14 @@ export function CreateLeagueDialog({ isOpen, onOpenChange, onLeagueCreate }: Cre
             />
             <Label htmlFor="isHandicapped">Enable Handicap System</Label>
           </div>
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={!name || isLoading}>
-            {isLoading ? "Creating..." : "Create League"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <div className="pt-4">
+            <Button onClick={handleUpdate} disabled={isLoading}>
+              {isLoading ? "Updating..." : "Update League"}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
